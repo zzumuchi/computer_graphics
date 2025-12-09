@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Light Labyrinth - Builder</title>
+    <link rel="stylesheet" href="style.css">
+    
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="toolbox">
+        <h3>큐브 창고</h3>
+        <button id="btn-add-mirror" class="cube-btn">🪞 반사 큐브 추가</button>
+        <div class="description">큐브를 추가하고<br>드래그하여 배치하세요.</div>
+    </div>
+
+    <div id="ui-layer">
+        <div id="info">T: 이동 | R: 회전 | ESC: 선택 해제</div>
+    </div>
+    
+    <script type="module" src="./src/main.js"></script>
+</body>
+</html>
