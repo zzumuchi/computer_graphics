@@ -6,7 +6,7 @@ import { createLaserLine, updateLaserSystem } from './laser.js';
 
 // --- 1. 씬 및 카메라 ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x050505); // 어두운 배경
+scene.background = new THREE.Color(0x050505);
 
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(20, 20, 20);
@@ -30,7 +30,6 @@ const ROOM_SIZE = 10;
 const roomGroup = createRoom(ROOM_SIZE);
 scene.add(roomGroup);
 
-// 벽면 감지 대상
 const surfaces = [];
 roomGroup.traverse((child) => {
     if (child.isMesh && child.userData.isSurface) {
@@ -51,102 +50,65 @@ const mirrors = [];
 const laserLine = createLaserLine();
 scene.add(laserLine);
 
-// --- 3. 컨트롤 및 회전 기즈모 (수정됨) ---
+// --- 3. 컨트롤 및 회전 기즈모 ---
 const orbitControls = new OrbitControls(camera, renderer.domElement);
 orbitControls.enableDamping = true;
 orbitControls.maxPolarAngle = Math.PI / 2;
 
-// [NEW] 곡선 화살표 생성 헬퍼 함수
-function createCurvedArrow(axis, direction) {
-    const group = new THREE.Group();
-    const radius = 1.0; // 큐브보다 약간 크게
-    const tube = 0.05;  // 튜브 두께
-    const color = 0xffffff; // 무조건 흰색
-
-    // 1. 튜브 (몸통) - 90도(PI/2) 가량의 아치
-    const arc = Math.PI / 2.5; 
-    const torusGeo = new THREE.TorusGeometry(radius, tube, 6, 12, arc);
-    const torusMat = new THREE.MeshBasicMaterial({ color: color });
-    const body = new THREE.Mesh(torusGeo, torusMat);
-    
-    // 튜브 위치 조정 (중앙 정렬)
-    body.rotation.z = -arc / 2; 
-
-    // 2. 원뿔 (머리)
-    const coneGeo = new THREE.ConeGeometry(tube * 3, tube * 6, 12);
-    const coneMat = new THREE.MeshBasicMaterial({ color: color });
-    const head = new THREE.Mesh(coneGeo, coneMat);
-    
-    // 머리 위치: 아치 끝부분
-    head.position.x = radius * Math.cos(arc / 2);
-    head.position.y = radius * Math.sin(arc / 2);
-    // 머리 회전: 접선 방향
-    head.rotation.z = arc / 2 + Math.PI / 2; 
-    // 반대 방향 회전일 경우 머리를 반대쪽 끝에 붙임
-    if (direction < 0) {
-        head.position.x = radius * Math.cos(-arc / 2);
-        head.position.y = radius * Math.sin(-arc / 2);
-        head.rotation.z = -arc / 2 - Math.PI / 2;
-    }
-
-    // 그룹에 추가 및 데이터 설정 (클릭 감지용)
-    const userData = { isGizmo: true, axis: axis, angle: direction * Math.PI / 2 };
-    body.userData = userData;
-    head.userData = userData;
-    
-    group.add(body);
-    group.add(head);
-
-    // 3. 축에 따른 전체 그룹 회전 및 배치
-    // 기본 Torus는 XY 평면에 누워 있음 (Z축 기준 회전)
-    if (axis === 'x') {
-        // X축 기준 회전 -> YZ 평면에 위치해야 함 -> Y축으로 90도 회전
-        group.rotation.y = Math.PI / 2;
-        // 방향에 따라 위/아래 배치 구분 등을 위해 추가 회전 필요하면 여기서 조정
-        // 여기서는 단순히 시각적 구분을 위해 위치만 조금씩 띄움 안해도 됨
-    } else if (axis === 'y') {
-        // Y축 기준 회전 -> XZ 평면에 위치해야 함 -> X축으로 90도 회전
-        group.rotation.x = Math.PI / 2;
-    } else if (axis === 'z') {
-        // Z축 기준 회전 -> XY 평면 (기본값)
-    }
-
-    return group;
-}
-
-// [NEW] 회전 기즈모 생성 함수 (곡선 화살표 조합)
-function createRotationGizmo() {
-    const gizmo = new THREE.Group(); 
+// [삼각형 화살표 기즈모 - 2개로 축소]
+function createTriangleGizmo() {
+    const gizmo = new THREE.Group();
     gizmo.visible = false;
-    
-    // 6방향 곡선 화살표 생성
-    
-    // 1. X축 회전 (YZ 평면)
-    const xPos = createCurvedArrow('x', 1); // +90도
-    const xNeg = createCurvedArrow('x', -1); // -90도
-    xNeg.rotation.x = Math.PI; // 반대편에 위치시키기 위해 뒤집음
-    
-    // 2. Y축 회전 (XZ 평면)
-    const yPos = createCurvedArrow('y', 1);
-    const yNeg = createCurvedArrow('y', -1);
-    yNeg.rotation.z = Math.PI; // 반대편
 
-    // 3. Z축 회전 (XY 평면)
-    const zPos = createCurvedArrow('z', 1);
-    const zNeg = createCurvedArrow('z', -1);
-    zNeg.rotation.x = Math.PI; // 반대편
+    const arrowGeo = new THREE.ConeGeometry(0.2, 0.4, 16);
+    const arrowMat = new THREE.MeshBasicMaterial({ color: 0xffffff }); // 흰색
 
-    // 그룹에 추가
-    gizmo.add(xPos, xNeg, yPos, yNeg, zPos, zNeg);
+    const dist = 0.8; 
     
+    // [핵심 수정] 화살표를 2개(X축용, Y축용)만 남김
+    const directions = [
+        // 1. Right (+X 위치): Y축 기준 회전 (수평 회전)
+        // 오른쪽을 가리키는 화살표 -> 수직인 Y축 기준 회전
+        { 
+            name: 'Rotate Y',
+            pos: [dist, 0, 0], 
+            rot: [0, 0, -Math.PI/2], // 오른쪽(→)을 향함
+            axis: 'y', 
+            angle: -Math.PI/2 
+        },
+        
+        // 2. Up (+Y 위치): X축 기준 회전 (수직 회전)
+        // 위쪽을 가리키는 화살표 -> 수직인 X축 기준 회전
+        { 
+            name: 'Rotate X',
+            pos: [0, dist, 0], 
+            rot: [0, 0, 0], // 위쪽(↑)을 향함
+            axis: 'x', 
+            angle: -Math.PI/2 
+        }
+    ];
+
+    directions.forEach(d => {
+        const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+        arrow.position.set(...d.pos);
+        arrow.rotation.set(...d.rot);
+        
+        arrow.userData = { 
+            isGizmo: true, 
+            axis: d.axis, 
+            angle: d.angle 
+        };
+        gizmo.add(arrow);
+    });
+
     return gizmo;
 }
 
-const rotationGizmo = createRotationGizmo();
+const rotationGizmo = createTriangleGizmo();
 scene.add(rotationGizmo);
 
 
-// --- 4. 인터랙션 로직 ---
+// --- 4. 인터랙션 ---
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let selectedCube = null;
@@ -162,30 +124,25 @@ window.addEventListener('pointerdown', (event) => {
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
 
-    // 1. 회전 모드일 때 Gizmo 클릭 처리
+    // 1. 기즈모(화살표) 클릭
     if (isRotMode && rotationGizmo.visible) {
-        // Gizmo의 자식들(그룹)의 자식들(메쉬)까지 검사해야 함
-        const gizmoHits = raycaster.intersectObjects(rotationGizmo.children, true);
-        
-        // 클릭된 것 중 userData.isGizmo가 있는 첫 번째 물체 찾기
-        const hit = gizmoHits.find(h => h.object.userData.isGizmo);
-
-        if (hit && selectedCube) {
-            const data = hit.object.userData;
-            // 해당 축으로 90도 회전
-            if (data.axis === 'x') selectedCube.rotateX(data.angle);
-            if (data.axis === 'y') selectedCube.rotateY(data.angle);
-            if (data.axis === 'z') selectedCube.rotateZ(data.angle);
-            
-            // 회전 후 업데이트
-            updateLaserSystem({ source, sensor, mirrors, door }, laserLine);
-            return; 
+        const gizmoHits = raycaster.intersectObjects(rotationGizmo.children);
+        if (gizmoHits.length > 0) {
+            const data = gizmoHits[0].object.userData;
+            if (data.isGizmo && selectedCube) {
+                // 회전 적용
+                if (data.axis === 'x') selectedCube.rotateX(data.angle);
+                if (data.axis === 'y') selectedCube.rotateY(data.angle);
+                // Z축 회전은 제거됨
+                
+                updateLaserSystem({ source, sensor, mirrors, door }, laserLine);
+                return;
+            }
         }
     }
 
     // 2. 큐브 선택
     const intersects = raycaster.intersectObjects(mirrors);
-    
     if (intersects.length > 0) {
         let target = intersects[0].object;
         while(target.parent && !mirrors.includes(target)) {
@@ -209,7 +166,7 @@ window.addEventListener('pointerdown', (event) => {
     }
 });
 
-// 4-2. Pointer Move
+// 4-2. Pointer Move (드래그)
 window.addEventListener('pointermove', (event) => {
     if (isRotMode || !isDragging || !selectedCube) return;
 
@@ -249,7 +206,7 @@ window.addEventListener('pointerup', () => {
 });
 
 
-// --- 5. UI 버튼 & 단축키 ---
+// --- 5. UI 및 루프 ---
 document.getElementById('btn-add-mirror').addEventListener('click', () => {
     const newCube = createMirrorCube(0.5, -4.5, 0.5);
     scene.add(newCube);
@@ -267,8 +224,8 @@ window.addEventListener('keydown', (event) => {
                 isRotMode = !isRotMode;
                 rotationGizmo.visible = isRotMode;
                 rotationGizmo.position.copy(selectedCube.position);
-                const status = isRotMode ? "🔄 ROTATION MODE" : "↔️ MOVE MODE";
-                if(infoUI) infoUI.innerText = `${status}: 흰색 화살표를 눌러 회전`;
+                const status = isRotMode ? "🔄 ROTATION" : "↔️ MOVE";
+                if(infoUI) infoUI.innerText = `${status}: 화살표(→, ↑)를 눌러 회전`;
             }
             break;
         case 'escape':
@@ -288,8 +245,6 @@ window.addEventListener('keydown', (event) => {
     }
 });
 
-
-// --- 6. 애니메이션 루프 ---
 const sceneParams = { source, sensor, mirrors, door };
 function animate() {
     requestAnimationFrame(animate);

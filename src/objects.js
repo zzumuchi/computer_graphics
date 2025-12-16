@@ -13,21 +13,21 @@ export function createRoom(size) {
     });
     const wallGeo = new THREE.PlaneGeometry(size, size);
 
-    // 1-1. 바닥
+    // 바닥
     const floor = new THREE.Mesh(wallGeo, wallMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -halfSize;
     floor.userData = { isSurface: true, type: 'floor' };
     group.add(floor);
 
-    // 1-2. 왼쪽 벽
+    // 왼쪽 벽
     const leftWall = new THREE.Mesh(wallGeo, wallMat);
     leftWall.rotation.y = Math.PI / 2;
     leftWall.position.x = -halfSize;
     leftWall.userData = { isSurface: true, type: 'wall' };
     group.add(leftWall);
 
-    // 1-3. 뒤쪽 벽
+    // 뒤쪽 벽
     const backWall = new THREE.Mesh(wallGeo, wallMat);
     backWall.position.z = -halfSize;
     backWall.userData = { isSurface: true, type: 'wall' };
@@ -44,52 +44,68 @@ export function createFixedCube(color, x, y, z) {
     ).translateX(x).translateY(y).translateZ(z);
 }
 
-// --- 3. 반사 큐브 (수정됨: ignoreLaser 태그 추가) ---
+// --- 3. 반사 큐브 (불투명 거울 적용) ---
 export function createMirrorCube(x, y, z) {
     const group = new THREE.Group();
     group.position.set(x, y, z);
     group.userData = { type: 'mirror', draggable: true };
 
-    // 3-1. 외부 투명 박스
-    const outerGeo = new THREE.BoxGeometry(1, 1, 1);
-    const outerMat = new THREE.MeshPhysicalMaterial({
-        color: 0xaaccff,
-        transparent: true,
-        opacity: 0.3,
-        roughness: 0.1,
-        transmission: 0.8,
-        thickness: 1.0,
-        side: THREE.FrontSide, // 앞면만 렌더링
+    const geometry = new THREE.BufferGeometry();
+    const vertices = new Float32Array([
+        // 1. 빗면 (Mirror Surface)
+        -0.5, 0.5, 0.5,   0.5, -0.5, 0.5,   -0.5, 0.5, -0.5, 
+        0.5, -0.5, 0.5,   0.5, -0.5, -0.5,  -0.5, 0.5, -0.5, 
+
+        // 2. 바닥면
+        -0.5, -0.5, 0.5,  0.5, -0.5, 0.5,   -0.5, -0.5, -0.5,
+        0.5, -0.5, 0.5,   0.5, -0.5, -0.5,  -0.5, -0.5, -0.5,
+
+        // 3. 뒷면
+        -0.5, -0.5, 0.5,  -0.5, -0.5, -0.5, -0.5, 0.5, 0.5,
+        -0.5, -0.5, -0.5, -0.5, 0.5, -0.5,  -0.5, 0.5, 0.5,
+
+        // 4. 옆면 1
+        -0.5, -0.5, 0.5,  -0.5, 0.5, 0.5,   0.5, -0.5, 0.5,
+
+        // 5. 옆면 2
+        -0.5, -0.5, -0.5, 0.5, -0.5, -0.5,  -0.5, 0.5, -0.5
+    ]);
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.computeVertexNormals();
+
+    geometry.addGroup(0, 6, 1);  // 빗면 -> Material 1
+    geometry.addGroup(6, 24, 0); // 나머지 -> Material 0
+
+    // [Material 0] 구조체: 불투명한 흰색
+    const structMat = new THREE.MeshStandardMaterial({
+        color: 0xdddddd, 
+        roughness: 0.8,
+        metalness: 0.1
     });
-    const outerBox = new THREE.Mesh(outerGeo, outerMat);
-    
-    // [핵심 수정] 레이저가 이 박스는 무시하고 통과하도록 태그 설정
-    outerBox.userData = { ignoreLaser: true }; 
-    
-    group.add(outerBox);
 
-    // 테두리 (Edges)
-    const edgesGeo = new THREE.EdgesGeometry(outerGeo);
-    const edgesMat = new THREE.LineBasicMaterial({ color: 0x88aaff, linewidth: 2 });
-    const edges = new THREE.LineSegments(edgesGeo, edgesMat);
-    edges.userData = { ignoreLaser: true }; // 테두리도 레이저 무시
-    group.add(edges);
-
-
-    // 3-2. 내부 반사면 (거울)
-    const mirrorGeo = new THREE.PlaneGeometry(1.414, 1);
+    // [Material 1] 반사면: 불투명하고 반짝이는 하늘색 거울
+    // 투명도(transparent) 제거, metalness 높임
     const mirrorMat = new THREE.MeshStandardMaterial({
-        color: 0xaaaaaa,
-        roughness: 0.0,
-        metalness: 1.0,
-        side: THREE.DoubleSide
+        color: 0xaaccff, // 약간 푸른빛이 도는 거울색
+        roughness: 0.1,  // 매끈함
+        metalness: 0.9,  // 금속성 (반사 느낌)
+        emissive: 0x112233, // 약간의 자체 발광으로 어둠 속에서도 식별 가능
+        emissiveIntensity: 0.2
     });
-    const mirrorSurface = new THREE.Mesh(mirrorGeo, mirrorMat);
-    
-    mirrorSurface.rotation.x = Math.PI / 4; 
-    mirrorSurface.userData = { isReflectiveSurface: true }; 
-    
-    group.add(mirrorSurface);
+
+    const prismMesh = new THREE.Mesh(geometry, [structMat, mirrorMat]);
+    prismMesh.userData = { isPrism: true };
+    prismMesh.castShadow = true;
+    prismMesh.receiveShadow = true;
+    group.add(prismMesh);
+
+    // 테두리
+    const edgesGeo = new THREE.EdgesGeometry(geometry);
+    const edgesMat = new THREE.LineBasicMaterial({ color: 0x333333, linewidth: 1 });
+    const edges = new THREE.LineSegments(edgesGeo, edgesMat);
+    edges.userData = { ignoreLaser: true };
+    group.add(edges);
 
     return group;
 }
