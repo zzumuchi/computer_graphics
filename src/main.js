@@ -1,26 +1,65 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 import { createRoom, createFixedCube, createMirrorCube, createDoor, createPlayer } from './objects.js';
 import { createLaserLine, updateLaserSystem } from './laser.js';
 
-// --- 1. 씬 및 카메라 ---
+// --- 1. 씬 및 카메라 설정 ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x050505);
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(20, 20, 20);
-camera.lookAt(0, 0, 0);
+const width = window.innerWidth;
+const height = window.innerHeight;
+const aspect = width / height;
+
+// 1-1. Perspective Camera (원근)
+const perspCamera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
+perspCamera.position.set(20, 20, 20);
+perspCamera.lookAt(0, 0, 0);
+
+// 1-2. Orthographic Camera (직교)
+const frustumSize = 25; // 뷰 크기
+const orthoCamera = new THREE.OrthographicCamera(
+    frustumSize * aspect / -2, frustumSize * aspect / 2,
+    frustumSize / 2, frustumSize / -2,
+    0.1, 1000
+);
+// 직교 뷰 초기 위치 (아이소메트릭 뷰 각도)
+orthoCamera.position.set(20, 20, 20);
+orthoCamera.lookAt(0, 0, 0);
+
+// 현재 활성 카메라
+let activeCamera = perspCamera;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setSize(width, height);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ReinhardToneMapping;
+renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+// --- Post-processing ---
+// [중요] RenderPass의 카메라는 나중에 switchCamera에서 업데이트해야 함
+const renderScene = new RenderPass(scene, activeCamera);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 1.5, 0.4, 0.85);
+bloomPass.threshold = 0.85;
+bloomPass.strength = 0.4;
+bloomPass.radius = 0.3;
+
+const outputPass = new OutputPass();
+const composer = new EffectComposer(renderer);
+composer.addPass(renderScene);
+composer.addPass(bloomPass);
+composer.addPass(outputPass);
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
 scene.add(ambientLight);
-const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
 dirLight.position.set(10, 20, 10);
 dirLight.castShadow = true;
 scene.add(dirLight);
@@ -37,9 +76,9 @@ roomGroup.traverse((child) => {
     }
 });
 
-const source = createFixedCube(0xff0000, -4.5, -4.5, 4.5);
+const source = createFixedCube(0xff0000, -4.5, -4.5, 4.5, 'source');
 scene.add(source);
-const sensor = createFixedCube(0x00ff00, 2.5, 2.5, -4.5);
+const sensor = createFixedCube(0x00ff00, 2.5, 2.5, -4.5, 'sensor');
 scene.add(sensor);
 const door = createDoor();
 scene.add(door);
@@ -50,212 +89,381 @@ const mirrors = [];
 const laserLine = createLaserLine();
 scene.add(laserLine);
 
-// --- 3. 컨트롤 및 회전 기즈모 ---
-const orbitControls = new OrbitControls(camera, renderer.domElement);
+// --- 3. 컨트롤 및 기즈모 ---
+const orbitControls = new OrbitControls(activeCamera, renderer.domElement);
 orbitControls.enableDamping = true;
 orbitControls.maxPolarAngle = Math.PI / 2;
 
-// [삼각형 화살표 기즈모 - 2개로 축소]
-function createTriangleGizmo() {
+// [NEW] 카메라 전환 함수
+const btnCamera = document.getElementById('btn-camera');
+function switchCamera() {
+    if (activeCamera === perspCamera) {
+        // Perspective -> Ortho
+        activeCamera = orthoCamera;
+        btnCamera.innerText = "📐 Orthographic";
+        
+        // Ortho 모드: 회전 잠금, 줌만 가능
+        orbitControls.object = orthoCamera;
+        orbitControls.enableRotate = false; // 회전 불가능
+        orbitControls.reset(); // 컨트롤 리셋하여 뷰 꼬임 방지
+        
+        // 보기 좋은 각도로 강제 설정
+        orthoCamera.position.set(20, 20, 20);
+        orthoCamera.lookAt(0, 0, 0);
+        orthoCamera.zoom = 1;
+        orthoCamera.updateProjectionMatrix();
+
+    } else {
+        // Ortho -> Perspective
+        activeCamera = perspCamera;
+        btnCamera.innerText = "🎥 Perspective";
+        
+        // Persp 모드: 자유 회전 가능
+        orbitControls.object = perspCamera;
+        orbitControls.enableRotate = true;
+    }
+    
+    // Composer(Bloom)의 카메라도 교체해야 함!
+    renderScene.camera = activeCamera;
+}
+btnCamera.addEventListener('click', switchCamera);
+
+
+function createAxisGizmo() {
     const gizmo = new THREE.Group();
     gizmo.visible = false;
+    const radius = 1.3; const tube = 0.02;
+    const mat = new THREE.MeshBasicMaterial({ color: 0x888888, toneMapped: false, transparent: true, opacity: 0.8 });
+    const torusGeo = new THREE.TorusGeometry(radius, tube, 16, 64);
 
-    const arrowGeo = new THREE.ConeGeometry(0.2, 0.4, 16);
-    const arrowMat = new THREE.MeshBasicMaterial({ color: 0xffffff }); // 흰색
+    const ringX = new THREE.Mesh(torusGeo, mat.clone());
+    ringX.rotation.y = Math.PI / 2; ringX.userData = { isGizmo: true, axis: 'x', name: 'X-Axis' };
+    gizmo.add(ringX);
 
-    const dist = 0.8; 
-    
-    // [핵심 수정] 화살표를 2개(X축용, Y축용)만 남김
-    const directions = [
-        // 1. Right (+X 위치): Y축 기준 회전 (수평 회전)
-        // 오른쪽을 가리키는 화살표 -> 수직인 Y축 기준 회전
-        { 
-            name: 'Rotate Y',
-            pos: [dist, 0, 0], 
-            rot: [0, 0, -Math.PI/2], // 오른쪽(→)을 향함
-            axis: 'y', 
-            angle: -Math.PI/2 
-        },
-        
-        // 2. Up (+Y 위치): X축 기준 회전 (수직 회전)
-        // 위쪽을 가리키는 화살표 -> 수직인 X축 기준 회전
-        { 
-            name: 'Rotate X',
-            pos: [0, dist, 0], 
-            rot: [0, 0, 0], // 위쪽(↑)을 향함
-            axis: 'x', 
-            angle: -Math.PI/2 
-        }
-    ];
+    const ringY = new THREE.Mesh(torusGeo, mat.clone());
+    ringY.rotation.x = Math.PI / 2; ringY.userData = { isGizmo: true, axis: 'y', name: 'Y-Axis' };
+    gizmo.add(ringY);
 
-    directions.forEach(d => {
-        const arrow = new THREE.Mesh(arrowGeo, arrowMat);
-        arrow.position.set(...d.pos);
-        arrow.rotation.set(...d.rot);
-        
-        arrow.userData = { 
-            isGizmo: true, 
-            axis: d.axis, 
-            angle: d.angle 
-        };
-        gizmo.add(arrow);
-    });
+    const ringZ = new THREE.Mesh(torusGeo, mat.clone());
+    ringZ.userData = { isGizmo: true, axis: 'z', name: 'Z-Axis' };
+    gizmo.add(ringZ);
 
     return gizmo;
 }
-
-const rotationGizmo = createTriangleGizmo();
+const rotationGizmo = createAxisGizmo();
 scene.add(rotationGizmo);
 
 
-// --- 4. 인터랙션 ---
+// --- 4. 게임 상태 ---
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
-let selectedCube = null;
-let isDragging = false;
-let isRotMode = false;
 const infoUI = document.getElementById('info');
 
-// 4-1. Pointer Down
+let selectedCube = null;     
+let activeAxis = null;       
+let isDragging = false;      
+let mouseDownTime = 0;       
+let mouseDownPos = new THREE.Vector2();
+
+let isLaserOn = false; 
+let lives = 5;
+let isSuccess = false;
+let failTimer = null;
+
+function highlightCube(cube, isSelected) {
+    if (!cube) return;
+    const outline = cube.getObjectByName('selectionOutline');
+    if (outline) {
+        outline.material.color.setHex(isSelected ? 0xffff00 : 0x555555);
+        outline.material.linewidth = isSelected ? 2 : 1;
+        outline.material.toneMapped = !isSelected;
+    }
+}
+
+function updateGizmoColors() {
+    rotationGizmo.children.forEach(ring => {
+        if (activeAxis && ring.userData.axis === activeAxis) {
+            ring.material.color.setHex(0xffff00); 
+            ring.material.opacity = 1.0;
+            ring.scale.setScalar(1.1); 
+        } else {
+            ring.material.color.setHex(0xaaaaaa); 
+            ring.material.opacity = 0.5;
+            ring.scale.setScalar(1.0);
+        }
+    });
+}
+
+const sceneParams = { source, sensor, mirrors, door };
+
+function checkLaser() {
+    const hit = updateLaserSystem(sceneParams, laserLine, isLaserOn);
+    if (isLaserOn) {
+        if (hit) {
+            isSuccess = true;
+            if(failTimer) clearTimeout(failTimer); 
+            if(infoUI) {
+                infoUI.innerText = "SUCCESS! 문이 열렸습니다!";
+                infoUI.style.color = "#00ff00";
+            }
+        } else {
+            isSuccess = false;
+        }
+    } else {
+        isSuccess = false;
+    }
+}
+
+function updateUI() {
+    if(!infoUI) return;
+    if(lives <= 0) {
+        infoUI.innerText = "GAME OVER (새로고침하세요)";
+        infoUI.style.color = "red";
+    } else if (isSuccess) {
+        // msg
+    } else {
+        const laserStatus = isLaserOn ? "ON" : "OFF";
+        infoUI.innerText = `❤️ Lives: ${lives} | Laser: ${laserStatus} | 🟥 광원을 클릭하여 발사`;
+        infoUI.style.color = "white";
+    }
+}
+
+// --- 5. 이벤트 리스너 ---
+
 window.addEventListener('pointerdown', (event) => {
-    if (event.target.closest('#toolbox') || event.target.closest('#ui-layer')) return;
+    if (event.target.closest('#toolbox') || event.target.closest('#ui-layer') || event.target.closest('#btn-camera')) return;
 
     mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
+    mouseDownPos.set(event.clientX, event.clientY);
+    mouseDownTime = Date.now();
+    // [중요] 현재 활성화된 카메라로 레이캐스팅
+    raycaster.setFromCamera(mouse, activeCamera);
 
-    // 1. 기즈모(화살표) 클릭
-    if (isRotMode && rotationGizmo.visible) {
+    // 1. 기즈모 클릭
+    let hitGizmo = false;
+    if (selectedCube && rotationGizmo.visible) {
         const gizmoHits = raycaster.intersectObjects(rotationGizmo.children);
         if (gizmoHits.length > 0) {
-            const data = gizmoHits[0].object.userData;
-            if (data.isGizmo && selectedCube) {
-                // 회전 적용
-                if (data.axis === 'x') selectedCube.rotateX(data.angle);
-                if (data.axis === 'y') selectedCube.rotateY(data.angle);
-                // Z축 회전은 제거됨
-                
-                updateLaserSystem({ source, sensor, mirrors, door }, laserLine);
-                return;
+            const hit = gizmoHits[0].object;
+            if (hit.userData.isGizmo) {
+                activeAxis = hit.userData.axis;
+                updateGizmoColors();
+                orbitControls.enabled = false; 
+                hitGizmo = true;
+                return; 
             }
         }
     }
 
-    // 2. 큐브 선택
+    if (!hitGizmo) {
+        activeAxis = null;
+        updateGizmoColors();
+        orbitControls.enabled = true;
+    }
+
+    // 2. 광원 클릭
+    const sourceHits = raycaster.intersectObject(source);
+    if (sourceHits.length > 0) {
+        if (failTimer) clearTimeout(failTimer);
+        isLaserOn = !isLaserOn;
+        if (isLaserOn) {
+            checkLaser();
+            const hit = updateLaserSystem(sceneParams, laserLine, true);
+            if (!hit) {
+                lives--;
+                if(infoUI) {
+                    infoUI.innerText = `FAIL! 다시 시도하세요. (남은 목숨: ${lives})`;
+                    infoUI.style.color = "orange";
+                }
+                failTimer = setTimeout(() => {
+                    isLaserOn = false;
+                    checkLaser();
+                    updateUI();
+                }, 3000);
+            }
+        } else {
+            checkLaser();
+            updateUI();
+        }
+        return;
+    }
+
+    // 3. 반사 큐브 드래그
     const intersects = raycaster.intersectObjects(mirrors);
     if (intersects.length > 0) {
         let target = intersects[0].object;
-        while(target.parent && !mirrors.includes(target)) {
-             target = target.parent;
-        }
+        while(target.parent && !mirrors.includes(target)) { target = target.parent; }
         
         if (mirrors.includes(target)) {
-            selectedCube = target;
-            isDragging = true;
-            orbitControls.enabled = false;
-            
-            rotationGizmo.position.copy(selectedCube.position);
-            if (isRotMode) rotationGizmo.visible = true;
+            isDragging = true; 
+            orbitControls.enabled = false; 
+            window.dragTarget = target; 
         }
     } else {
-        if (!isRotMode) {
-            selectedCube = null;
-            rotationGizmo.visible = false;
-        }
         isDragging = false;
     }
 });
 
-// 4-2. Pointer Move (드래그)
 window.addEventListener('pointermove', (event) => {
-    if (isRotMode || !isDragging || !selectedCube) return;
+    if (isDragging && window.dragTarget) {
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, activeCamera); // 활성 카메라 사용
 
-    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(surfaces);
+        if (intersects.length > 0) {
+            const hit = intersects[0];
+            const faceNormal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).round();
+            const targetPos = hit.point.clone().add(faceNormal.multiplyScalar(0.5));
+            const snap = (val) => Math.floor(val) + 0.5;
+            targetPos.x = snap(targetPos.x); targetPos.y = snap(targetPos.y); targetPos.z = snap(targetPos.z);
+            const limit = (ROOM_SIZE / 2) - 0.5;
+            targetPos.x = Math.max(-limit, Math.min(limit, targetPos.x));
+            targetPos.y = Math.max(-limit, Math.min(limit, targetPos.y));
+            targetPos.z = Math.max(-limit, Math.min(limit, targetPos.z));
+            
+            window.dragTarget.position.copy(targetPos);
+            if (selectedCube === window.dragTarget) {
+                rotationGizmo.position.copy(targetPos);
+            }
+            if (isLaserOn) checkLaser();
+        }
+        return;
+    }
 
-    const intersects = raycaster.intersectObjects(surfaces);
-
-    if (intersects.length > 0) {
-        const hit = intersects[0];
-        const hitPoint = hit.point;
-        const faceNormal = hit.face.normal.clone();
-        faceNormal.transformDirection(hit.object.matrixWorld).round();
-
-        const targetPos = hitPoint.clone().add(faceNormal.multiplyScalar(0.5));
+    if (selectedCube && rotationGizmo.visible && !activeAxis) {
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, activeCamera);
+        const hits = raycaster.intersectObjects(rotationGizmo.children);
         
-        const snap = (val) => Math.floor(val) + 0.5;
-        targetPos.x = snap(targetPos.x);
-        targetPos.y = snap(targetPos.y);
-        targetPos.z = snap(targetPos.z);
+        rotationGizmo.children.forEach(r => {
+            if (r.userData.axis !== activeAxis) {
+                r.material.color.setHex(0xaaaaaa);
+                r.material.opacity = 0.5;
+                r.scale.setScalar(1.0);
+            }
+        });
 
-        const limit = (ROOM_SIZE / 2) - 0.5;
-        targetPos.x = Math.max(-limit, Math.min(limit, targetPos.x));
-        targetPos.y = Math.max(-limit, Math.min(limit, targetPos.y));
-        targetPos.z = Math.max(-limit, Math.min(limit, targetPos.z));
-
-        selectedCube.position.copy(targetPos);
-        rotationGizmo.position.copy(targetPos); 
+        if (hits.length > 0) {
+            hits[0].object.material.color.setHex(0xffffff);
+            hits[0].object.material.opacity = 1.0;
+            hits[0].object.scale.setScalar(1.05);
+        }
     }
 });
 
-// 4-3. Pointer Up
-window.addEventListener('pointerup', () => {
-    isDragging = false;
+window.addEventListener('pointerup', (event) => {
+    const timeDiff = Date.now() - mouseDownTime;
+    const distDiff = new THREE.Vector2(event.clientX, event.clientY).distanceTo(mouseDownPos);
+    isDragging = false; 
     orbitControls.enabled = true;
-});
+    const releasedCube = window.dragTarget; 
+    window.dragTarget = null;
 
+    if (timeDiff < 200 && distDiff < 5) {
+        if (activeAxis) return; 
+        
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, activeCamera);
+        if (rotationGizmo.visible && raycaster.intersectObjects(rotationGizmo.children).length > 0) return;
 
-// --- 5. UI 및 루프 ---
-document.getElementById('btn-add-mirror').addEventListener('click', () => {
-    const newCube = createMirrorCube(0.5, -4.5, 0.5);
-    scene.add(newCube);
-    mirrors.push(newCube);
-    
-    selectedCube = newCube;
-    rotationGizmo.position.copy(newCube.position);
-    if (isRotMode) rotationGizmo.visible = true;
-});
-
-window.addEventListener('keydown', (event) => {
-    switch (event.key.toLowerCase()) {
-        case 'r': 
+        if (releasedCube) {
+            // 선택 토글 로직 제거 -> 무조건 선택 (사용자 피드백 반영)
+            // 대신, 다른 걸 누르면 교체
+            if (selectedCube) highlightCube(selectedCube, false);
+            
+            selectedCube = releasedCube; 
+            highlightCube(selectedCube, true);
+            
+            rotationGizmo.visible = true; 
+            rotationGizmo.position.copy(selectedCube.position);
+            activeAxis = null; 
+            updateGizmoColors();
+        } else {
+            // 빈 공간 -> 해제
             if (selectedCube) {
-                isRotMode = !isRotMode;
-                rotationGizmo.visible = isRotMode;
-                rotationGizmo.position.copy(selectedCube.position);
-                const status = isRotMode ? "🔄 ROTATION" : "↔️ MOVE";
-                if(infoUI) infoUI.innerText = `${status}: 화살표(→, ↑)를 눌러 회전`;
-            }
-            break;
-        case 'escape':
-            selectedCube = null;
-            isRotMode = false;
-            rotationGizmo.visible = false;
-            if(infoUI) infoUI.innerText = "큐브를 선택하세요";
-            break;
-        case 'delete': case 'backspace':
-            if (selectedCube) {
-                scene.remove(selectedCube);
-                mirrors.splice(mirrors.indexOf(selectedCube), 1);
+                highlightCube(selectedCube, false);
                 selectedCube = null;
                 rotationGizmo.visible = false;
+                activeAxis = null;
+                updateUI();
             }
-            break;
+        }
     }
 });
 
-const sceneParams = { source, sensor, mirrors, door };
+window.addEventListener('wheel', (event) => {
+    if (selectedCube && activeAxis) {
+        const direction = event.deltaY > 0 ? -1 : 1; 
+        const angle = (Math.PI / 2) * direction;
+        
+        const worldX = new THREE.Vector3(1, 0, 0);
+        const worldY = new THREE.Vector3(0, 1, 0);
+        const worldZ = new THREE.Vector3(0, 0, 1);
+
+        if (activeAxis === 'x') selectedCube.rotateOnWorldAxis(worldX, angle);
+        else if (activeAxis === 'y') selectedCube.rotateOnWorldAxis(worldY, angle);
+        else if (activeAxis === 'z') selectedCube.rotateOnWorldAxis(worldZ, angle);
+        
+        selectedCube.updateMatrixWorld();
+        if(isLaserOn) checkLaser();
+    }
+}, { passive: false });
+
+
+// --- 6. 초기화 및 루프 ---
+document.getElementById('btn-add-mirror').addEventListener('click', () => {
+    const newCube = createMirrorCube(0.5, -4.5, 0.5);
+    scene.add(newCube); mirrors.push(newCube);
+    
+    if (selectedCube) {
+        highlightCube(selectedCube, false);
+        selectedCube = null;
+        rotationGizmo.visible = false;
+        activeAxis = null;
+    }
+    
+    updateGizmoColors();
+    updateUI();
+});
+
+updateUI();
+
 function animate() {
     requestAnimationFrame(animate);
     orbitControls.update();
-    updateLaserSystem(sceneParams, laserLine);
-    renderer.render(scene, camera);
+
+    const doorPanel = door.userData.panel;
+    if (isSuccess) {
+        if (doorPanel.position.y < 3) doorPanel.position.y += 0.05;
+    } else {
+        if (doorPanel.position.y > 0) doorPanel.position.y -= 0.05;
+    }
+    composer.render();
 }
 animate();
 
 window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const aspect = width / height;
+
+    // Perspective 업데이트
+    perspCamera.aspect = aspect;
+    perspCamera.updateProjectionMatrix();
+
+    // Orthographic 업데이트 (Frustum 유지)
+    orthoCamera.left = -frustumSize * aspect / 2;
+    orthoCamera.right = frustumSize * aspect / 2;
+    orthoCamera.top = frustumSize / 2;
+    orthoCamera.bottom = -frustumSize / 2;
+    orthoCamera.updateProjectionMatrix();
+
+    renderer.setSize(width, height);
+    composer.setSize(width, height);
+    
+    // 해상도 전달은 Line2를 안 쓰므로 제거 (CylinderGeometry는 필요 없음)
 });

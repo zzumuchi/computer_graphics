@@ -3,8 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Light Labyrinth - Builder</title>
+    <title>Light Labyrinth</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* 카메라 버튼 스타일 추가 */
+        #btn-camera {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            padding: 10px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            z-index: 100;
+            font-size: 1.2rem;
+        }
+        #btn-camera:hover { background: #555; }
+    </style>
     
     <script type="importmap">
         {
@@ -19,11 +36,13 @@
     <div id="toolbox">
         <h3>큐브 창고</h3>
         <button id="btn-add-mirror" class="cube-btn">🪞 반사 큐브 추가</button>
-        <div class="description">큐브를 추가하고<br>드래그하여 배치하세요.</div>
+        <div class="description">드래그하여 이동<br>클릭하여 선택<br>빈 공간 클릭 해제</div>
     </div>
 
+    <button id="btn-camera" title="뷰 전환">🎥 Perspective</button>
+
     <div id="ui-layer">
-        <div id="info">T: 이동 | R: 회전 | ESC: 선택 해제</div>
+        <div id="info">큐브를 드래그하여 이동, 클릭하여 선택</div>
     </div>
     
     <script type="module" src="./src/main.js"></script>
