@@ -1,50 +1,46 @@
 <!DOCTYPE html>
 <html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Light Labyrinth</title>
-    <link rel="stylesheet" href="style.css">
-    <style>
-        /* 카메라 버튼 스타일 추가 */
-        #btn-camera {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: #333;
-            color: white;
-            border: 1px solid #555;
-            padding: 10px 15px;
-            border-radius: 8px;
-            cursor: pointer;
-            z-index: 100;
-            font-size: 1.2rem;
-        }
-        #btn-camera:hover { background: #555; }
-    </style>
-    
+    <link rel="stylesheet" href="style.css" />
     <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
         }
+      }
     </script>
-</head>
-<body>
+  </head>
+  <body>
     <div id="toolbox">
-        <h3>큐브 창고</h3>
-        <button id="btn-add-mirror" class="cube-btn">🪞 반사 큐브 추가</button>
-        <div class="description">드래그하여 이동<br>클릭하여 선택<br>빈 공간 클릭 해제</div>
+      <h3>큐브 창고</h3>
+      <button id="btn-add-mirror" class="cube-btn">🪞 반사 큐브 추가</button>
+      <div class="description">
+        드래그하여 이동<br />클릭하여 선택<br />빈 공간 클릭 해제
+      </div>
     </div>
 
-    <button id="btn-camera" title="뷰 전환">🎥 Perspective</button>
+    <div id="camera-status">MODE: 3D PERSPECTIVE</div>
 
     <div id="ui-layer">
-        <div id="info">큐브를 드래그하여 이동, 클릭하여 선택</div>
+      <div id="info">큐브를 드래그하여 이동, 클릭하여 선택</div>
     </div>
-    
+
     <script type="module" src="./src/main.js"></script>
-</body>
+    <div id="start-screen">
+      <div class="content">
+        <h1>LIGHT LABYRINTH</h1>
+        <p>레이저를 연결해 문을 열고 탈출하세요.</p>
+        <p class="controls-hint">
+          [V]: 1인칭(WASD) ↔ 3인칭 전환<br>
+          [1,2,3,4]: 시점 변경 | 클릭: 시작
+        </p>
+        <button id="btn-start">게임 시작</button>
+      </div>
+    </div>
+    <div id="crosshair" style="display: none;"></div>
+  </body>
 </html>
