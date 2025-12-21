@@ -1,15 +1,11 @@
 import * as THREE from 'three';
 
 // --- 1. 벽돌 룸 생성 ---
-// [objects.js] 의 createBrickRoom 함수
-
-// [objects.js] createBrickRoom 함수
 
 export function createBrickRoom(size) {
     const group = new THREE.Group();
     const halfSize = size / 2;
-    
-    // [수정] 벽 두께를 1.0 -> 0.6으로 줄임 (벽돌 깊이와 일치)
+    // 벽 두께 및 벽돌 설정
     const thickness = 0.6; 
 
     const wallMat = new THREE.MeshStandardMaterial({
@@ -28,79 +24,94 @@ export function createBrickRoom(size) {
     floor.userData = { isSurface: true, type: 'floor' };
     group.add(floor);
 
-    // 벽 생성 함수
+    // 벽 생성 함수 (InstancedMesh 적용)
     function createDoubleWall(name, x, y, z, width, height, depth) {
         const wrapper = new THREE.Group();
         wrapper.name = name;
 
-        // A. 통짜 벽
+        // A. 통짜 벽 (평소에 보이는 벽)
         const solidGeo = new THREE.BoxGeometry(width, height, depth);
         const solidMesh = new THREE.Mesh(solidGeo, wallMat.clone());
         solidMesh.position.set(x, y, z);
         solidMesh.userData = { isSurface: true, type: 'solidWall' }; 
         wrapper.add(solidMesh);
 
-        // B. 조각 벽 (직육면체 벽돌)
-        const brickGroup = new THREE.Group();
-        brickGroup.visible = false; 
-        brickGroup.userData = { type: 'brickGroup' }; 
-
-        const isXWall = (width < 2); // 두께가 얇은 쪽이 X축(좌우 벽)인가?
-
-        // [수정] 벽돌 사이즈 계산 로직 최적화
-        // 목표: (길이 1.2) x (높이 0.6) x (두께 0.6)
+        // B. 조각 벽 (InstancedMesh 최적화)
+        // 벽돌 하나의 크기 설정
         const targetLength = 1.2;
         const targetHeight = 0.6;
-        
-        // 1. 벽돌의 '두께' 방향 크기 (벽의 두께와 일치시킴)
-        // XWall이면 width가 두께, 아니면 depth가 두께
+        const isXWall = (width < 2);
+
         const tW = isXWall ? width : (width / Math.ceil(width / targetLength));
         const tH = targetHeight;
         const tD = isXWall ? (depth / Math.ceil(depth / targetLength)) : depth;
 
-        // 실제 지오메트리 생성
         const brickGeo = new THREE.BoxGeometry(tW, tH, tD);
         
         const cols = isXWall ? Math.ceil(depth / tD) : Math.ceil(width / tW);
         const rows = Math.ceil(height / tH);
+        const count = cols * rows;
 
-        // 시작점 계산 (중앙 정렬)
+        // [최적화] InstancedMesh 생성
+        const instancedMesh = new THREE.InstancedMesh(brickGeo, wallMat.clone(), count);
+        instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); // 매 프레임 업데이트 허용
+        instancedMesh.visible = false; 
+        instancedMesh.castShadow = false; // [성능] 작은 파편 그림자 제거
+        instancedMesh.receiveShadow = false;
+
+        // 위치 및 속도 데이터 저장소
+        const velocities = [];
+        const rotVels = [];
+        const initialMatrices = [];
+        const dummy = new THREE.Object3D(); // 계산용 임시 객체
+
         const startH = isXWall ? (z - depth/2 + tD/2) : (x - width/2 + tW/2);
         const startV = y - height/2 + tH/2;
 
+        let index = 0;
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
-                const mat = wallMat.clone();
-                const mesh = new THREE.Mesh(brickGeo, mat);
-                
                 const hPos = startH + c * (isXWall ? tD : tW);
                 const vPos = startV + r * tH;
 
-                if (isXWall) mesh.position.set(x, vPos, hPos);
-                else mesh.position.set(hPos, vPos, z);
+                if (isXWall) dummy.position.set(x, vPos, hPos);
+                else dummy.position.set(hPos, vPos, z);
 
-                // 속도 계산 (랜덤 낙하)
-                mesh.userData = { 
-                    isBrick: true, 
-                    velocity: new THREE.Vector3(
-                        (Math.random() - 0.5) * 0.2, 
-                        Math.random() * -0.2,        
-                        (Math.random() - 0.5) * 0.2  
-                    ),
-                    rotVel: new THREE.Vector3(
-                        Math.random() * 0.1, 
-                        Math.random() * 0.1, 
-                        Math.random() * 0.1
-                    )
-                };
-                brickGroup.add(mesh);
+                dummy.rotation.set(0, 0, 0);
+                dummy.updateMatrix();
+
+                // 행렬 저장
+                instancedMesh.setMatrixAt(index, dummy.matrix);
+                initialMatrices.push(dummy.matrix.clone());
+
+                // 속도 데이터 (Array에 저장)
+                velocities.push(
+                    (Math.random() - 0.5) * 0.2, 
+                    Math.random() * -0.2,        
+                    (Math.random() - 0.5) * 0.2
+                );
+                rotVels.push(
+                    Math.random() * 0.1, 
+                    Math.random() * 0.1, 
+                    Math.random() * 0.1
+                );
+
+                index++;
             }
         }
-        wrapper.add(brickGroup);
+
+        instancedMesh.userData = { 
+            type: 'brickGroup', 
+            isInstanced: true,
+            velocities: new Float32Array(velocities), // 메모리 최적화
+            rotVels: new Float32Array(rotVels),
+            initialMatrices: initialMatrices // 리셋용 원본 위치
+        };
+
+        wrapper.add(instancedMesh);
         return wrapper;
     }
 
-    // 벽 배치 (두께가 thickness로 변경됨)
     group.add(createDoubleWall('Wall_Left', -halfSize - thickness/2, 0, 0, thickness, size, size));
     group.add(createDoubleWall('Wall_Right', halfSize + thickness/2, 0, 0, thickness, size, size));
     group.add(createDoubleWall('Wall_Back', 0, 0, -halfSize - thickness/2, size, size, thickness));

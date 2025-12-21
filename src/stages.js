@@ -6,7 +6,6 @@ export const STAGES = [
     { 
         id: 1, 
         msg: "Stage 1: 빛의 시작",
-        // 바닥 높이 + 0.5 (큐브 중심)
         sourcePos: [-7, FLOOR_Y + 0.5, 7], 
         sensorPos: [7, FLOOR_Y + 0.5, -7], 
         maxMirrors: 10,
@@ -15,15 +14,15 @@ export const STAGES = [
     { 
         id: 2, 
         msg: "Stage 2: 빛의 분산 (Prism)",
-        // [설계] 
-        // 1. Source(0, 7)에서 위로 발사 
-        // 2. (0, 5)에 분산 큐브 배치 -> 좌우 45도로 갈라짐 (목표: -6, -1 지점)
-        // 3. (-6, -1)과 (6, -1)에 거울 배치 -> 다시 중앙(-7)으로 반사
-        // 4. Sensor(0, -7)에 도달
         sourcePos: [0, FLOOR_Y + 0.5, 7], 
         sensorPos: [0, FLOOR_Y + 0.5, -7], 
-        maxMirrors: 3, // 분산 큐브 1개 + 거울 2개 필요
-        fixedElements: [] 
+        maxMirrors: 3, 
+        fixedElements: [
+            // [추가됨] 중앙을 가로막는 장애물
+            // 이제 흰색 빛이 직진해서 센서에 닿을 수 없으므로,
+            // 반드시 분산 큐브로 빛을 갈라 장애물 옆으로 지나가게 해야 합니다.
+            { type: 'obstacle', pos: [0, FLOOR_Y + 0.5, 0], color: 0x555555 }
+        ]
     },
     { 
         id: 3, 
@@ -32,8 +31,7 @@ export const STAGES = [
         sensorPos: [7, FLOOR_Y + 0.5, 7], 
         maxMirrors: 5,
         fixedElements: [
-            // 레이저를 막는 중앙 장애물
-            { type: 'obstacle', pos: [0, FLOOR_Y + 0.5, 0], color: 0x555555 },
+            { type: 'obstacle', pos: [0, FLOOR_Y + 0.5, 0], color: 0x222222 },
         ]
     }
 ];

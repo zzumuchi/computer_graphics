@@ -262,34 +262,30 @@ function loadStage(index) {
     // 벽 상태 초기화 (여기가 핵심 수정 부분)
     roomGroup.children.forEach(wrapper => {
         if (!wrapper.name.startsWith("Wall")) return;
+        
         const solid = wrapper.children.find(c => c.userData.type === 'solidWall');
+        // 여기서 brickGroup은 이제 InstancedMesh입니다.
         const bricks = wrapper.children.find(c => c.userData.type === 'brickGroup');
         
         if (solid) solid.visible = true; // 통짜 벽 보이기
         
-        if (bricks) {
-            bricks.visible = false; 
-            bricks.children.forEach(b => {
-                // 1. 위치 복구
-                if (b.userData.initialPos) {
-                    b.position.copy(b.userData.initialPos);
-                }
-                b.rotation.set(0,0,0);
-                b.visible = true;
-
-                // [수정] 2. 속도 리셋 (랜덤 낙하로 복귀)
-                b.userData.velocity = new THREE.Vector3(
-                    (Math.random() - 0.5) * 0.2, 
-                    Math.random() * -0.2,        
-                    (Math.random() - 0.5) * 0.2  
-                );
+        if (bricks && bricks.isInstancedMesh) {
+            bricks.visible = false; // 벽돌 숨기기
+            
+            // 초기 위치로 리셋
+            const initials = bricks.userData.initialMatrices;
+            const vels = bricks.userData.velocities;
+            
+            for (let i = 0; i < bricks.count; i++) {
+                // 1. 위치 원상복구
+                bricks.setMatrixAt(i, initials[i]);
                 
-                b.userData.rotVel = new THREE.Vector3(
-                    Math.random() * 0.1, 
-                    Math.random() * 0.1, 
-                    Math.random() * 0.1
-                );
-            });
+                // 2. 속도 랜덤 리셋 (중요: Array 값 갱신)
+                vels[i * 3 + 0] = (Math.random() - 0.5) * 0.2;
+                vels[i * 3 + 1] = Math.random() * -0.2;
+                vels[i * 3 + 2] = (Math.random() - 0.5) * 0.2;
+            }
+            bricks.instanceMatrix.needsUpdate = true;
         }
     });
 
@@ -384,15 +380,13 @@ function checkLaser() {
                 if (!wrapper.name.startsWith("Wall")) return;
                 const solid = wrapper.children.find(c => c.userData.type === 'solidWall');
                 const bricks = wrapper.children.find(c => c.userData.type === 'brickGroup');
+                
                 if (solid) solid.visible = false; 
+                
                 if (bricks) {
                     bricks.visible = true; 
-                    bricks.children.forEach(b => {
-                        if (!b.userData.initialPos) b.userData.initialPos = b.position.clone();
-                        b.position.copy(b.userData.initialPos);
-                        b.rotation.set(0,0,0);
-                        b.visible = true;
-                    });
+                    // InstancedMesh는 별도의 자식 순회(forEach)가 필요 없습니다.
+                    // loadStage에서 이미 위치를 잡고 있으므로 바로 보여주기만 하면 됩니다.
                 }
             });
 
@@ -424,14 +418,11 @@ function updateWallTransparency() {
         if(wrapper) {
             wrapper.children.forEach(child => {
                 if (!child.visible) return; 
-                if (child.userData.type === 'solidWall') {
+                
+                // 통짜 벽이든 InstancedMesh(벽돌)든 material.opacity 조절 방식은 동일
+                if (child.material) {
                     child.material.opacity = opacity;
                     child.material.depthWrite = (opacity > 0.5); 
-                } else if (child.userData.type === 'brickGroup') {
-                    child.children.forEach(brick => {
-                        brick.material.opacity = opacity;
-                        brick.material.depthWrite = (opacity > 0.5);
-                    });
                 }
             });
         }
@@ -442,34 +433,59 @@ function updateWallTransparency() {
     setOpacity('Wall_Back',  (cz < -limit) ? fadeOpacity : 1.0);
 }
 
-// [main.js] animateCrumble 함수 수정
+const dummy = new THREE.Object3D(); // 전역 변수나 함수 밖에 선언 추천
 
 function animateCrumble() {
     if (!isCleared) return;
     
     roomGroup.traverse(child => {
-        if (child.userData.isBrick && child.parent.visible) {
-            // 위치 이동
-            child.position.add(child.userData.velocity);
+        // InstancedMesh이고, 현재 보이는 상태(무너지는 중)라면
+        if (child.isInstancedMesh && child.userData.type === 'brickGroup' && child.visible) {
             
-            // 회전 적용
-            child.rotation.x += child.userData.rotVel.x;
-            child.rotation.y += child.userData.rotVel.y;
+            const count = child.count;
+            const vels = child.userData.velocities;
+            const rotVels = child.userData.rotVels;
             
-            // [핵심 수정] 중력 가속도 강화 (0.01 -> 0.035)
-            // 숫자가 클수록 더 빠르게 떨어져서 무게감이 느껴짐
-            child.userData.velocity.y -= 0.035; 
-            
-            // 너무 아래로 떨어지면 렌더링 끔 (성능 최적화)
-            if (child.position.y < -50) {
-                child.visible = false;
+            for (let i = 0; i < count; i++) {
+                // 1. 현재 행렬 가져오기
+                child.getMatrixAt(i, dummy.matrix);
+                
+                // 2. 위치, 회전, 크기 분해
+                dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+                
+                // 3. 물리 적용
+                // 속도 적용 (Flat array 접근: i*3, i*3+1, i*3+2)
+                dummy.position.x += vels[i * 3 + 0];
+                dummy.position.y += vels[i * 3 + 1];
+                dummy.position.z += vels[i * 3 + 2];
+                
+                // 회전 적용
+                dummy.rotation.x += rotVels[i * 3 + 0];
+                dummy.rotation.y += rotVels[i * 3 + 1];
+                dummy.rotation.z += rotVels[i * 3 + 2];
+
+                // 중력 적용
+                vels[i * 3 + 1] -= 0.035; 
+
+                // 4. 업데이트된 행렬 저장
+                dummy.updateMatrix();
+                
+                // 바닥 아래로 너무 떨어지면(최적화) 안 보이게 처리하고 싶지만, 
+                // InstancedMesh는 개별 숨기기가 까다로우므로 scale을 0으로 만듦
+                if (dummy.position.y < -30) {
+                    dummy.scale.set(0, 0, 0);
+                    dummy.updateMatrix();
+                }
+
+                child.setMatrixAt(i, dummy.matrix);
             }
+            // [중요] 변경사항 GPU 업로드 요청
+            child.instanceMatrix.needsUpdate = true;
         }
     });
 
-    // 배경이 서서히 밝아지는 연출 (클리어 시)
     if (scene.background.r < 0.6) {
-        const val = scene.background.r + 0.01; // 밝아지는 속도도 약간 빠르게
+        const val = scene.background.r + 0.01;
         scene.background.setRGB(val, val, val);
     }
 }
@@ -677,9 +693,13 @@ controls.addEventListener('unlock', () => {
     }
 });
 
+// [main.js] window.addEventListener('pointerdown', ...) 전체 교체
+
 window.addEventListener('pointerdown', (event) => {
+    // 1. UI 클릭 무시
     if (event.target.closest('#toolbox') || event.target.closest('#ui-layer') || event.target.closest('#btn-camera')) return;
 
+    // 2. 마우스 좌표 계산
     if (currentMode === CameraMode.FIRST_PERSON) {
         mouse.set(0, 0);
     } else {
@@ -690,6 +710,7 @@ window.addEventListener('pointerdown', (event) => {
     mouseDownTime = Date.now();
     raycaster.setFromCamera(mouse, activeCamera);
 
+    // 3. 기즈모(회전축) 클릭 확인
     let hitGizmo = false;
     if (selectedCube && rotationGizmo.visible) {
         const gizmoHits = raycaster.intersectObjects(rotationGizmo.children);
@@ -708,25 +729,14 @@ window.addEventListener('pointerdown', (event) => {
         if (currentMode !== CameraMode.FIRST_PERSON) orbitControls.enabled = true;
     }
 
+    // 4. 광원(Source) 클릭 확인
     const sourceHits = raycaster.intersectObject(source);
     if (sourceHits.length > 0) {
         if (failTimer) clearTimeout(failTimer);
         isLaserOn = !isLaserOn;
         if (isLaserOn) {
             checkLaser();
-            const hit = updateLaserSystem(sceneParams, laserLine, true);
-            if (!hit) {
-                lives--;
-                if(infoUI) {
-                    infoUI.innerText = `FAIL! 다시 시도하세요. (남은 목숨: ${lives})`;
-                    infoUI.style.color = "orange";
-                }
-                failTimer = setTimeout(() => {
-                    isLaserOn = false;
-                    checkLaser();
-                    updateUI();
-                }, 3000);
-            }
+            updateLaserSystem(sceneParams, laserLine, true);
         } else {
             checkLaser();
             updateUI();
@@ -734,40 +744,49 @@ window.addEventListener('pointerdown', (event) => {
         return;
     }
 
-    // recursive: true 추가됨
+    // 5. 거울/큐브 선택 및 드래그 로직 (핵심 수정 부분)
     const intersects = raycaster.intersectObjects(mirrors, true);
 
     if (intersects.length > 0) {
         let target = intersects[0].object;
-        while(target.parent && !mirrors.includes(target)) { target = target.parent; }
+        
+        // 클릭한 메쉬의 부모 그룹(실제 큐브 객체) 찾기
+        while(target.parent && !mirrors.includes(target)) { 
+            target = target.parent; 
+        }
         
         if (mirrors.includes(target)) {
+            // [A] 고정 요소(장애물)인 경우 -> 선택 해제 후 종료
             if (target.userData.draggable === false) {
-                // 고정 요소라면 드래그는 막고 '선택(회전용)'만 수행
-                selectedCube = target;
-                rotationGizmo.visible = true;
-                rotationGizmo.position.copy(target.position);
-                highlightCube(selectedCube, true);
-                
-                isDragging = false; // 드래그는 false로 유지하여 이동 방지
-                if(orbitControls.enabled) orbitControls.enabled = true; 
-                return; // 함수 종료
+                if (selectedCube) {
+                    highlightCube(selectedCube, false);
+                    selectedCube = null;
+                    rotationGizmo.visible = false;
+                    activeAxis = null;
+                    guideLines.visible = false;
+                    updateUI();
+                }
+                return; // 드래그 시작 안 함!
             }
-            // ------------------------------------------
 
-            // 고정 요소가 아닐 때만 기존 드래그 로직 실행
+            // [B] 일반 큐브인 경우 -> 무조건 드래그 시작
             isDragging = true; 
             if(orbitControls.enabled) orbitControls.enabled = false; 
             window.dragTarget = target; 
             
-            // 선택 효과 적용
-            if (selectedCube) highlightCube(selectedCube, false);
-            selectedCube = target;
-            highlightCube(selectedCube, true);
-            rotationGizmo.visible = true;
-            rotationGizmo.position.copy(selectedCube.position);
+            // 선택 효과 갱신
+            if (selectedCube !== target) {
+                if (selectedCube) highlightCube(selectedCube, false);
+                selectedCube = target;
+                highlightCube(selectedCube, true);
+                
+                rotationGizmo.visible = true;
+                rotationGizmo.position.copy(selectedCube.position);
+                updateUI();
+            }
         }
     } else {
+        // 빈 공간 클릭 -> 드래그 및 선택 해제
         isDragging = false;
     }
 });
@@ -877,17 +896,19 @@ window.addEventListener('pointerup', (event) => {
     }
 });
 
+// 1. 삼각 거울 추가 버튼
 btnAddMirror.addEventListener('click', () => {
-    if (mirrors.length >= STAGES[currentStageIndex].maxMirrors) {
+    const currentUserMirrors = mirrors.filter(m => m.userData.draggable !== false).length;
+    
+    if (currentUserMirrors >= STAGES[currentStageIndex].maxMirrors) {
         alert("더 이상 큐브를 추가할 수 없습니다.");
         return;
     }
+    
     const newCube = createMirrorCube(0, FLOOR_SURFACE_Y + 0.5, 0);
     scene.add(newCube); mirrors.push(newCube);
-    if (selectedCube) {
-        highlightCube(selectedCube, false);
-        selectedCube = null;
-    }
+    
+    if (selectedCube) { highlightCube(selectedCube, false); selectedCube = null; }
     selectedCube = newCube;
     highlightCube(selectedCube, true);
     rotationGizmo.visible = true;
@@ -898,20 +919,19 @@ btnAddMirror.addEventListener('click', () => {
     updateUI();
 });
 
-// [NEW] 사다리꼴 거울 이벤트 리스너
+// 2. 사다리꼴 거울 추가 버튼
 btnAddTrapezoid.addEventListener('click', () => {
-    // 스테이지별 최대 거울 개수 제한 확인
-    if (mirrors.length >= STAGES[currentStageIndex].maxMirrors) {
+    const currentUserMirrors = mirrors.filter(m => m.userData.draggable !== false).length;
+
+    if (currentUserMirrors >= STAGES[currentStageIndex].maxMirrors) {
         alert("더 이상 큐브를 추가할 수 없습니다.");
         return;
     }
 
-    // 바닥 위치에 사다리꼴 거울 생성
     const newCube = createTrapezoidMirrorCube(0, FLOOR_SURFACE_Y + 0.5, 0);
     scene.add(newCube);
     mirrors.push(newCube);
 
-    // 생성 즉시 선택 상태로 전환
     if (selectedCube) highlightCube(selectedCube, false);
     selectedCube = newCube;
     highlightCube(selectedCube, true);
@@ -921,14 +941,16 @@ btnAddTrapezoid.addEventListener('click', () => {
     updateUI();
 });
 
+// 3. 직육면체 거울 추가 버튼 (반투명 거울 등)
 btnAddHalf.addEventListener('click', () => {
-    if (mirrors.length >= STAGES[currentStageIndex].maxMirrors) return;
+    const currentUserMirrors = mirrors.filter(m => m.userData.draggable !== false).length;
+
+    if (currentUserMirrors >= STAGES[currentStageIndex].maxMirrors) return;
     
     const newCube = createHalfMirrorCube(0, FLOOR_SURFACE_Y + 0.5, 0);
     scene.add(newCube);
     mirrors.push(newCube);
     
-    // 선택 및 기즈모 활성화 로직 (기존과 동일)
     if (selectedCube) highlightCube(selectedCube, false);
     selectedCube = newCube;
     highlightCube(selectedCube, true);
@@ -974,17 +996,26 @@ window.addEventListener('resize', () => {
     composer.setSize(w, h);
 });
 
+// [main.js] 분산 큐브 추가 버튼 로직 수정
+
 if (btnAddDispersion) {
     btnAddDispersion.addEventListener('click', () => {
-        if (mirrors.length >= STAGES[currentStageIndex].maxMirrors) {
+        // [수정 전] if (mirrors.length >= STAGES[currentStageIndex].maxMirrors) { ... }
+        
+        // [수정 후] 고정된 장애물(draggable: false)은 제외하고, 내가 설치한 것만 카운트
+        const currentUserMirrors = mirrors.filter(m => m.userData.draggable !== false).length;
+
+        if (currentUserMirrors >= STAGES[currentStageIndex].maxMirrors) {
             alert("더 이상 큐브를 추가할 수 없습니다.");
             return;
         }
         
+        // 큐브 생성
         const newCube = createDispersionCube(0, FLOOR_SURFACE_Y + 0.5, 0);
         scene.add(newCube);
         mirrors.push(newCube);
 
+        // 선택 및 기즈모 활성화
         if (selectedCube) highlightCube(selectedCube, false);
         selectedCube = newCube;
         highlightCube(selectedCube, true);
