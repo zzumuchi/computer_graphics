@@ -17,9 +17,14 @@
   <body>
     <div id="toolbox">
       <h3>큐브 창고</h3>
-      <button id="btn-add-mirror" class="cube-btn">🪞 반사 큐브 추가</button>
+      <button id="btn-add-mirror" class="cube-btn">🪞 삼각 거울(90°)</button>
+      <button id="btn-add-trapezoid" class="cube-btn">📐 사다리꼴 거울 (45°/135°)</button>
+      <button id="btn-add-half" class="cube-btn">▮ 직육면체 거울 (슬림)</button>
+      
+      <button id="btn-add-dispersion" class="cube-btn">💎 분산 큐브 (분광)</button>
+      
       <div class="description">
-        드래그하여 이동<br />클릭하여 선택<br />빈 공간 클릭 해제
+          드래그하여 이동<br />클릭하여 선택<br />빈 공간 클릭 해제
       </div>
     </div>
 
@@ -33,14 +38,23 @@
     <div id="start-screen">
       <div class="content">
         <h1>LIGHT LABYRINTH</h1>
-        <p>레이저를 연결해 문을 열고 탈출하세요.</p>
+        <p>레이저를 연결해 벽을 깨고 탈출하세요.</p>
         <p class="controls-hint">
-          [V]: 1인칭(WASD) ↔ 3인칭 전환<br>
+          [V]: 1인칭(WASD) ↔ 3인칭 전환<br />
+          [R]: 설치한 큐브 초기화<br />
           [1,2,3,4]: 시점 변경 | 클릭: 시작
         </p>
         <button id="btn-start">게임 시작</button>
       </div>
     </div>
-    <div id="crosshair" style="display: none;"></div>
+    <div id="crosshair" style="display: none"></div>
+    <div id="game-over-screen" style="display: none">
+      <div class="content">
+        <h1 style="color: #ff4444; font-size: 4rem">GAME OVER</h1>
+        <p id="game-over-msg" style="font-size: 1.5rem; margin-bottom: 20px">
+          모든 기회를 소진했습니다.<br />새로고침을 눌러 다시 시작하세요.
+        </p>
+      </div>
+    </div>
   </body>
 </html>

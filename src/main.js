@@ -5,7 +5,9 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
-import { createBrickRoom, createFixedCube, createMirrorCube, createPlayer } from './objects.js'; 
+import { createBrickRoom, createFixedCube, createMirrorCube, 
+    createTrapezoidMirrorCube, createHalfMirrorCube, createDispersionCube, // <--- 추가
+    createPlayer } from './objects.js';
 import { createLaserLine, updateLaserSystem } from './laser.js';
 import { STAGES } from './stages.js'; 
 
@@ -116,6 +118,9 @@ const infoUI = document.getElementById('info');
 const crosshair = document.getElementById('crosshair');
 const camStatusUI = document.getElementById('camera-status');
 const btnAddMirror = document.getElementById('btn-add-mirror');
+const btnAddTrapezoid = document.getElementById('btn-add-trapezoid');
+const btnAddHalf = document.getElementById('btn-add-half');
+const btnAddDispersion = document.getElementById('btn-add-dispersion');
 
 // 컨트롤 관련
 const raycaster = new THREE.Raycaster();
@@ -160,9 +165,14 @@ scene.add(guideLines);
 function createAxisGizmo() {
     const gizmo = new THREE.Group();
     gizmo.visible = false;
-    const radius = 1.3; const tube = 0.02;
-    const mat = new THREE.MeshBasicMaterial({ color: 0x888888, toneMapped: false, transparent: true, opacity: 0.8 });
+    const radius = 1.3; const tube = 0.08;
+    const mat = new THREE.MeshBasicMaterial({ 
+        color: 0x888888, toneMapped: false, 
+        transparent: true, opacity: 0.8 
+    });
+    
     const torusGeo = new THREE.TorusGeometry(radius, tube, 16, 64);
+    
     const ringX = new THREE.Mesh(torusGeo, mat.clone());
     ringX.rotation.y = Math.PI / 2; ringX.userData = { isGizmo: true, axis: 'x', name: 'X-Axis' };
     gizmo.add(ringX);
@@ -172,6 +182,7 @@ function createAxisGizmo() {
     const ringZ = new THREE.Mesh(torusGeo, mat.clone());
     ringZ.userData = { isGizmo: true, axis: 'z', name: 'Z-Axis' };
     gizmo.add(ringZ);
+    
     return gizmo;
 }
 const rotationGizmo = createAxisGizmo();
@@ -200,6 +211,8 @@ let currentMode = CameraMode.PERSPECTIVE;
 
 // --- 5. 스테이지 로드 함수 ---
 
+// [main.js] loadStage 함수 수정
+
 function loadStage(index) {
     const data = STAGES[index];
     if (!data) {
@@ -208,40 +221,78 @@ function loadStage(index) {
         return;
     }
     currentStageIndex = index;
+    
+    // 기존 거울 제거
     mirrors.forEach(m => scene.remove(m));
     mirrors.length = 0;
     
     source.position.set(...data.sourcePos);
     sensor.position.set(...data.sensorPos);
     
+    // 플레이어 위치 초기화
     playerGroup.position.set(0, FLOOR_SURFACE_Y + EYE_LEVEL, 0);
     playerGroup.rotation.set(0, 0, 0);
     
+    // 고정 요소 생성
+    if (data.fixedElements) {
+        data.fixedElements.forEach(el => {
+            if (el.type === 'obstacle') {
+                const obs = createFixedCube(el.color, ...el.pos, 'obstacle');
+                obs.userData.draggable = false;
+                scene.add(obs);
+                mirrors.push(obs); 
+            } else if (el.type === 'fixedMirror') {
+                const fm = createMirrorCube(...el.pos);
+                fm.userData.draggable = false;
+                fm.rotation.set(...el.rotation);
+                scene.add(fm);
+                mirrors.push(fm);
+            }
+        });
+    }
+
     isSuccess = false;
     isLaserOn = false;
     isCleared = false;
     
+    // 배경색 초기화
     scene.background = new THREE.Color(0x000000);
     ambientLight.intensity = 0.3;
 
+    // 벽 상태 초기화 (여기가 핵심 수정 부분)
     roomGroup.children.forEach(wrapper => {
         if (!wrapper.name.startsWith("Wall")) return;
         const solid = wrapper.children.find(c => c.userData.type === 'solidWall');
         const bricks = wrapper.children.find(c => c.userData.type === 'brickGroup');
-        if (solid) solid.visible = true; 
+        
+        if (solid) solid.visible = true; // 통짜 벽 보이기
+        
         if (bricks) {
             bricks.visible = false; 
             bricks.children.forEach(b => {
+                // 1. 위치 복구
                 if (b.userData.initialPos) {
                     b.position.copy(b.userData.initialPos);
-                    b.rotation.set(0,0,0);
-                    b.visible = true;
                 }
+                b.rotation.set(0,0,0);
+                b.visible = true;
+
+                // [수정] 2. 속도 리셋 (랜덤 낙하로 복귀)
+                b.userData.velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.2, 
+                    Math.random() * -0.2,        
+                    (Math.random() - 0.5) * 0.2  
+                );
+                
+                b.userData.rotVel = new THREE.Vector3(
+                    Math.random() * 0.1, 
+                    Math.random() * 0.1, 
+                    Math.random() * 0.1
+                );
             });
         }
     });
 
-    // 선택 해제 및 가이드라인 숨김
     if (selectedCube) highlightCube(selectedCube, false);
     selectedCube = null;
     guideLines.visible = false;
@@ -254,20 +305,62 @@ function loadStage(index) {
 function updateUI() {
     if(!infoUI) return;
     const data = STAGES[currentStageIndex];
-    const currentMirrors = mirrors.length;
+    const currentMirrors = mirrors.filter(m => m.userData.draggable !== false).length;
     const remain = data.maxMirrors - currentMirrors;
+
+    const updateBtn = (btn, labelBase) => {
+        if (!btn) return;
+        if (remain > 0) {
+            btn.disabled = false;
+            btn.style.opacity = 1;
+            btn.innerText = `${labelBase} (${remain}개 남음)`;
+        } else {
+            btn.disabled = true;
+            btn.style.opacity = 0.5;
+            btn.innerText = `🚫 추가 불가`;
+        }
+    };
 
     if (btnAddMirror) {
         btnAddMirror.disabled = (remain <= 0);
         btnAddMirror.innerText = remain > 0 
-            ? `🪞 반사 큐브 추가 (${remain}개 남음)` 
+            ? `📐 삼각 거울 (${remain}개 남음)` 
             : `🚫 추가 불가`;
         btnAddMirror.style.opacity = remain > 0 ? 1 : 0.5;
     }
 
+    if (btnAddTrapezoid) {
+        btnAddTrapezoid.disabled = (remain <= 0);
+        btnAddTrapezoid.style.opacity = remain > 0 ? 1 : 0.5;
+        btnAddTrapezoid.innerText = remain > 0 
+            ? `/▮ 사다리꼴 거울 (${remain}개 남음)` 
+            : `🚫 추가 불가`;
+    }
+
+    if (btnAddHalf) {
+        btnAddHalf.disabled = (remain <= 0);
+        btnAddHalf.style.opacity = remain > 0 ? 1 : 0.5;
+        btnAddHalf.innerText = remain > 0 
+            ? `▮ 직육면체 거울 (${remain}개 남음)` 
+            : `🚫 추가 불가`;
+    }
+
+    if (btnAddDispersion) {
+        btnAddDispersion.disabled = (remain <= 0);
+        btnAddDispersion.style.opacity = remain > 0 ? 1 : 0.5;
+        btnAddDispersion.innerText = remain > 0 
+            ? `💎 분산 큐브 (${remain}개 남음)` 
+            : `🚫 추가 불가`;
+    }
+
     if(lives <= 0) {
-        infoUI.innerText = "GAME OVER (새로고침하세요)";
-        infoUI.style.color = "red";
+        // [수정] 게임 오버 화면 표시 및 조작 차단
+        document.getElementById('game-over-screen').style.display = 'flex';
+        controls.unlock();
+        isLaserOn = false;
+        // 레이저 시스템 정지
+        updateLaserSystem(sceneParams, laserLine, false);
+        return;
     } else {
         const laserStatus = isLaserOn ? "ON" : "OFF";
         infoUI.innerHTML = `${data.msg} <br> ❤️ Lives: ${lives} | Laser: ${laserStatus}`;
@@ -349,21 +442,34 @@ function updateWallTransparency() {
     setOpacity('Wall_Back',  (cz < -limit) ? fadeOpacity : 1.0);
 }
 
+// [main.js] animateCrumble 함수 수정
+
 function animateCrumble() {
     if (!isCleared) return;
+    
     roomGroup.traverse(child => {
         if (child.userData.isBrick && child.parent.visible) {
+            // 위치 이동
             child.position.add(child.userData.velocity);
+            
+            // 회전 적용
             child.rotation.x += child.userData.rotVel.x;
             child.rotation.y += child.userData.rotVel.y;
-            child.userData.velocity.y -= 0.01; 
-            if (child.position.y < -30) {
+            
+            // [핵심 수정] 중력 가속도 강화 (0.01 -> 0.035)
+            // 숫자가 클수록 더 빠르게 떨어져서 무게감이 느껴짐
+            child.userData.velocity.y -= 0.035; 
+            
+            // 너무 아래로 떨어지면 렌더링 끔 (성능 최적화)
+            if (child.position.y < -50) {
                 child.visible = false;
             }
         }
     });
+
+    // 배경이 서서히 밝아지는 연출 (클리어 시)
     if (scene.background.r < 0.6) {
-        const val = scene.background.r + 0.005;
+        const val = scene.background.r + 0.01; // 밝아지는 속도도 약간 빠르게
         scene.background.setRGB(val, val, val);
     }
 }
@@ -497,6 +603,37 @@ function updateGizmoColors() {
     });
 }
 
+// 설치된 모든 거울 초기화
+function resetMirrors() {
+    // 1. 플레이어가 설치한(드래그 가능한) 거울만 골라내어 씬에서 제거
+    // 배열을 역순으로 순회하며 제거해야 안전합니다.
+    for (let i = mirrors.length - 1; i >= 0; i--) {
+        const mirror = mirrors[i];
+        if (mirror.userData.draggable !== false) {
+            scene.remove(mirror);
+            mirrors.splice(i, 1); // [중요] 기존 배열의 요소를 직접 삭제
+        }
+    }
+
+    // 2. 선택된 큐브 및 기즈모 초기화
+    if (selectedCube && selectedCube.userData.draggable !== false) {
+        if (typeof highlightCube === 'function') highlightCube(selectedCube, false);
+        selectedCube = null;
+        rotationGizmo.visible = false;
+        guideLines.visible = false;
+    }
+
+    // 3. UI 갱신
+    updateUI();
+
+    // 4. 레이저 시스템 즉시 업데이트
+    // sceneParams.mirrors는 여전히 기존 mirrors 배열을 참조하고 있으므로 
+    // 배열의 내용물만 바뀌면 레이저가 즉시 반영됩니다.
+    updateLaserSystem(sceneParams, laserLine, isLaserOn);
+    
+    console.log("설치된 모든 거울이 초기화되었습니다.");
+}
+
 // 이벤트 리스너들
 document.getElementById('btn-start').addEventListener('click', () => {
     document.getElementById('start-screen').style.display = 'none';
@@ -512,6 +649,11 @@ window.addEventListener('keydown', (e) => {
         case 'KeyV': 
             if (currentMode === CameraMode.FIRST_PERSON) setCameraMode(CameraMode.PERSPECTIVE);
             else setCameraMode(CameraMode.FIRST_PERSON);
+            break;
+        case 'KeyR':
+            // 실수로 누르는 것을 방지하기 위해 간단한 확인창을 띄울 수도 있습니다.
+            if (confirm("현재 스테이지에 설치된 모든 거울을 초기화할까요?")) 
+                { if (lives > 0) { resetMirrors(); } } // 게임 오버가 아닐 때만 초기화 가능
             break;
         case 'KeyW': moveState.forward = true; break;
         case 'KeyS': moveState.backward = true; break;
@@ -600,9 +742,30 @@ window.addEventListener('pointerdown', (event) => {
         while(target.parent && !mirrors.includes(target)) { target = target.parent; }
         
         if (mirrors.includes(target)) {
+            if (target.userData.draggable === false) {
+                // 고정 요소라면 드래그는 막고 '선택(회전용)'만 수행
+                selectedCube = target;
+                rotationGizmo.visible = true;
+                rotationGizmo.position.copy(target.position);
+                highlightCube(selectedCube, true);
+                
+                isDragging = false; // 드래그는 false로 유지하여 이동 방지
+                if(orbitControls.enabled) orbitControls.enabled = true; 
+                return; // 함수 종료
+            }
+            // ------------------------------------------
+
+            // 고정 요소가 아닐 때만 기존 드래그 로직 실행
             isDragging = true; 
             if(orbitControls.enabled) orbitControls.enabled = false; 
             window.dragTarget = target; 
+            
+            // 선택 효과 적용
+            if (selectedCube) highlightCube(selectedCube, false);
+            selectedCube = target;
+            highlightCube(selectedCube, true);
+            rotationGizmo.visible = true;
+            rotationGizmo.position.copy(selectedCube.position);
         }
     } else {
         isDragging = false;
@@ -735,6 +898,45 @@ btnAddMirror.addEventListener('click', () => {
     updateUI();
 });
 
+// [NEW] 사다리꼴 거울 이벤트 리스너
+btnAddTrapezoid.addEventListener('click', () => {
+    // 스테이지별 최대 거울 개수 제한 확인
+    if (mirrors.length >= STAGES[currentStageIndex].maxMirrors) {
+        alert("더 이상 큐브를 추가할 수 없습니다.");
+        return;
+    }
+
+    // 바닥 위치에 사다리꼴 거울 생성
+    const newCube = createTrapezoidMirrorCube(0, FLOOR_SURFACE_Y + 0.5, 0);
+    scene.add(newCube);
+    mirrors.push(newCube);
+
+    // 생성 즉시 선택 상태로 전환
+    if (selectedCube) highlightCube(selectedCube, false);
+    selectedCube = newCube;
+    highlightCube(selectedCube, true);
+    rotationGizmo.visible = true;
+    rotationGizmo.position.copy(selectedCube.position);
+    
+    updateUI();
+});
+
+btnAddHalf.addEventListener('click', () => {
+    if (mirrors.length >= STAGES[currentStageIndex].maxMirrors) return;
+    
+    const newCube = createHalfMirrorCube(0, FLOOR_SURFACE_Y + 0.5, 0);
+    scene.add(newCube);
+    mirrors.push(newCube);
+    
+    // 선택 및 기즈모 활성화 로직 (기존과 동일)
+    if (selectedCube) highlightCube(selectedCube, false);
+    selectedCube = newCube;
+    highlightCube(selectedCube, true);
+    rotationGizmo.visible = true;
+    rotationGizmo.position.copy(selectedCube.position);
+    updateUI();
+});
+
 window.addEventListener('wheel', (event) => {
     // 큐브가 선택되어 있고 + 기즈모 축이 활성화(클릭)된 상태일 때만 회전
     if (selectedCube && activeAxis) {
@@ -771,6 +973,27 @@ window.addEventListener('resize', () => {
     renderer.setSize(w, h);
     composer.setSize(w, h);
 });
+
+if (btnAddDispersion) {
+    btnAddDispersion.addEventListener('click', () => {
+        if (mirrors.length >= STAGES[currentStageIndex].maxMirrors) {
+            alert("더 이상 큐브를 추가할 수 없습니다.");
+            return;
+        }
+        
+        const newCube = createDispersionCube(0, FLOOR_SURFACE_Y + 0.5, 0);
+        scene.add(newCube);
+        mirrors.push(newCube);
+
+        if (selectedCube) highlightCube(selectedCube, false);
+        selectedCube = newCube;
+        highlightCube(selectedCube, true);
+        rotationGizmo.visible = true;
+        rotationGizmo.position.copy(selectedCube.position);
+        
+        updateUI();
+    });
+}
 
 // 시작
 animate();
