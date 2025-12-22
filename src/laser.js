@@ -1,200 +1,140 @@
-// [laser.js]
-
 import * as THREE from 'three';
 
 const raycaster = new THREE.Raycaster();
-const maxBounces = 10; 
+const maxReflections = 20; 
 
 let laserGroup;
-const meshPool = []; 
+const meshPool = [];
 
+// 1. 레이저 초기화
 export function createLaserLine() {
     laserGroup = new THREE.Group();
     return laserGroup;
 }
 
-export function updateLaserSystem(sceneParams, laserGroupObject, isActive) {
-    const { source, sensor, mirrors } = sceneParams;
+// 2. 레이저 업데이트
+export function updateLaserSystem(sceneParams, laserLine, isActive) {
+    const { source, sensors, mirrors } = sceneParams;
 
-    if (!isActive) {
-        meshPool.forEach(mesh => { mesh.visible = false; });
-        sensor.material.emissiveIntensity = 0.0;
-        sensor.material.color.setHex(0x00ff00);
+    // [핵심] 비활성 상태면 레이저를 숨기고 종료
+    if (!source || !isActive) {
+        laserLine.visible = false;
+        // 모든 센서의 충돌 판정 초기화
+        if (sensors) sensors.forEach(s => s.userData.isHit = false);
         return false;
     }
 
-    const startOrigin = source.position.clone();
-    const startDir = new THREE.Vector3(0, 0, -1).applyQuaternion(source.quaternion).normalize();
-    
-    // 레이저 추적 큐
-    const rayQueue = [{ 
-        origin: startOrigin, 
-        dir: startDir, 
-        color: new THREE.Color(1, 1, 1),
-        depth: 0,
-        ignoreObject: null 
-    }];
+    let rayOrigin = source.position.clone();
+    let rayDirection = source.userData.dir ? source.userData.dir.clone().normalize() : new THREE.Vector3(0, 0, 1);
+    let currentColor = 0xffffff;
+    const points = [];
+    points.push(rayOrigin.clone());
 
-    const segmentsToDraw = [];
-    
-    // [핵심 수정 1] 센서에 닿은 색상들을 저장할 Set (중복 제거)
-    const hitColors = new Set();
-    let hitSensor = false;
+    let hitAllSensors = false;
+    const interactables = sensors.concat(mirrors).filter(obj => obj && obj instanceof THREE.Object3D);
 
-    const allInteractables = [sensor, ...mirrors];
-
-    while (rayQueue.length > 0) {
-        const currentRay = rayQueue.shift();
-        if (currentRay.depth >= maxBounces) continue;
-
-        const interactables = currentRay.ignoreObject 
-            ? allInteractables.filter(obj => obj !== currentRay.ignoreObject) 
-            : allInteractables;
-
-        raycaster.set(currentRay.origin, currentRay.dir);
+    for (let i = 0; i < maxReflections; i++) {
+        raycaster.set(rayOrigin, rayDirection);
         const intersects = raycaster.intersectObjects(interactables, true);
+        
         const hit = intersects.find(intersect => !intersect.object.userData.ignoreLaser);
 
-        let endPoint;
-        
         if (hit) {
-            endPoint = hit.point;
-            
-            // 1. 센서 충돌
-            if (hit.object === sensor) {
-                hitSensor = true;
-                // [핵심 수정] 닿은 빛의 색상 Hex 값을 저장
-                hitColors.add(currentRay.color.getHex());
-            }
-            // 2. 분산 큐브 (Dispersion)
-            else if (hit.object.userData.isDispersion) {
-                let rootGroup = hit.object;
-                while(rootGroup.parent && rootGroup.parent.type !== 'Scene') {
-                    if (mirrors.includes(rootGroup)) break;
-                    rootGroup = rootGroup.parent;
-                }
+            points.push(hit.point.clone());
+            const obj = hit.object;
+            const parent = obj.parent || obj;
 
-                const passThroughDist = 1.0; 
-                const exitPoint = hit.point.clone().add(currentRay.dir.clone().multiplyScalar(passThroughDist));
-
-                // A. 입사광 (흰색)
-                segmentsToDraw.push({
-                    start: currentRay.origin,
-                    end: hit.point,
-                    color: currentRay.color 
-                });
-                // B. 내부 관통광 (흰색)
-                segmentsToDraw.push({
-                    start: hit.point,
-                    end: exitPoint,
-                    color: currentRay.color 
-                });
-
-                // C. 분산광 생성
-                const axis = new THREE.Vector3(0, 1, 0); 
+            // 2. 센서 충돌 판정 (방향 + 색상)
+            if (parent.userData.type === 'sensor') {
+                const sensorData = parent.userData;
+                const sensorDir = sensorData.dir; // objects.js에서 설정한 수광면 방향
                 
-                // Red Beam
-                const dirRed = currentRay.dir.clone().applyAxisAngle(axis, Math.PI / 4).normalize();
-                rayQueue.push({
-                    origin: exitPoint.clone(), 
-                    dir: dirRed,
-                    color: new THREE.Color(1, 0, 0),
-                    depth: currentRay.depth + 1,
-                    ignoreObject: rootGroup 
-                });
+                // 내적을 이용한 입사각 판정 (45도 대응을 위해 0.5 이상 체크)
+                const dot = sensorDir.dot(rayDirection.clone().negate());
+                
+                const isColorMatch = (currentColor === sensorData.targetColor);
 
-                // Blue Beam
-                const dirBlue = currentRay.dir.clone().applyAxisAngle(axis, -Math.PI / 4).normalize();
-                rayQueue.push({
-                    origin: exitPoint.clone(),
-                    dir: dirBlue,
-                    color: new THREE.Color(0, 0, 1),
-                    depth: currentRay.depth + 1,
-                    ignoreObject: rootGroup 
-                });
-
-                continue; 
+                // [참고] 조원분의 색상 로직이 있다면: (currentLaserColor === parent.userData.targetColor)
+                if (dot > 0.5 && isColorMatch) {
+                    parent.userData.isHit = true;
+                    // 시각적 피드백: 센서 렌즈를 레이저 색상으로 발광
+                    const lens = parent.getObjectByName("sensorLens");
+                    if (lens) {
+                        lens.material.emissive.setHex(currentColor);
+                        lens.material.emissiveIntensity = 2.0;
+                    }
+                } else {
+                    // 조건이 맞지 않으면 hit 해제
+                    sensorData.isHit = false;
+                    const lens = parent.getObjectByName("sensorLens");
+                    if (lens) {
+                        lens.material.emissive.setHex(0x000000);
+                    }
+                }
+                break; // 센서에 맞으면 레이저는 멈춤
             }
-            // 3. 반사 큐브
-            else if (hit.object.userData.isPrism || hit.object.userData.type === 'mirror') {
-                const incoming = currentRay.dir.clone();
-                const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
-                const reflected = incoming.reflect(normal).normalize();
 
-                rayQueue.push({
-                    origin: hit.point.clone().add(normal.multiplyScalar(0.01)),
-                    dir: reflected,
-                    color: currentRay.color, 
-                    depth: currentRay.depth + 1,
-                    ignoreObject: null 
-                });
+            // 3. 거울 반사 로직 (materialIndex 1이 거울면)
+            if (obj.userData.isPrism && hit.face.materialIndex === 1) {
+                const normal = hit.face.normal.clone().transformDirection(obj.matrixWorld).normalize();
+                
+                /**
+                 * [양면 거울 핵심 로직]
+                 * 레이저 방향과 법선이 같은 방향을 보고 있다면 (내적이 양수),
+                 * 레이저가 거울의 '뒷면'에 맞은 것이므로 법선을 반전시켜야 합니다.
+                 */
+                if (rayDirection.dot(normal) > 0) {
+                    normal.negate();
+                }
+                rayDirection.reflect(normal).normalize();
+                rayOrigin = hit.point.clone().add(normal.multiplyScalar(0.01));
+                continue;
             }
+
+            // 그 외(구조물 등)에 맞으면 멈춤
+            break; 
         } else {
-            endPoint = currentRay.origin.clone().add(currentRay.dir.multiplyScalar(50));
+            // 아무것도 안 맞으면 맵 끝까지 발사
+            const endPoint = rayOrigin.clone().add(rayDirection.clone().multiplyScalar(50));
+            points.push(endPoint);
+            break;
         }
-
-        segmentsToDraw.push({
-            start: currentRay.origin,
-            end: endPoint,
-            color: currentRay.color
-        });
     }
 
-    // --- 시각화 ---
+    // --- 시각화 (원기둥) ---
     meshPool.forEach(mesh => { mesh.visible = false; });
+    laserLine.visible = true;
 
-    for (let i = 0; i < segmentsToDraw.length; i++) {
-        const segData = segmentsToDraw[i];
+    for (let i = 0; i < points.length - 1; i++) {
+        const start = points[i];
+        const end = points[i+1];
+        const distance = start.distanceTo(end);
+
         let segment = meshPool[i];
-
         if (!segment) {
-            const geometry = new THREE.CylinderGeometry(0.05, 0.05, 1, 8);
-            geometry.rotateX(-Math.PI / 2);
-            const material = new THREE.MeshBasicMaterial({ toneMapped: false });
+            const geometry = new THREE.CylinderGeometry(0.05, 0.05, 1, 8); 
+            geometry.rotateX(-Math.PI / 2); 
+            
+            const material = new THREE.MeshBasicMaterial({ 
+                color: 0xffffff,
+                toneMapped: false 
+            });
+            
             segment = new THREE.Mesh(geometry, material);
-            segment.geometry.translate(0, 0, 0.5);
+            segment.geometry.translate(0, 0, 0.5); 
+            
             meshPool.push(segment);
-            laserGroupObject.add(segment);
+            laserLine.add(segment);
         }
 
         segment.visible = true;
-        segment.position.copy(segData.start);
-        segment.lookAt(segData.end);
-        segment.scale.z = segData.start.distanceTo(segData.end);
-
-        const intenseColor = segData.color.clone().multiplyScalar(10.0);
-        segment.material.color.copy(intenseColor);
+        segment.position.copy(start);
+        segment.lookAt(end);
+        segment.scale.z = distance; 
     }
 
-    // --- [핵심 수정 2] 성공 판정 로직 ---
-    // 1. 흰색 빛(기본)이 들어왔는가? (분산 큐브 없는 스테이지용)
-    const hasWhite = hitColors.has(0xffffff);
-    // 2. 빨강 AND 파랑 빛이 모두 들어왔는가? (분산 큐브 스테이지용)
-    const hasRed = hitColors.has(0xff0000);
-    const hasBlue = hitColors.has(0x0000ff);
-    
-    // 최종 성공 조건: 흰색이거나 OR (빨강과 파랑이 모두 있을 때)
-    const isMissionComplete = hasWhite || (hasRed && hasBlue);
-
-    if (isMissionComplete) {
-        // 성공: 밝은 연두색 (센서 활성화)
-        sensor.material.color.setHex(0x55ff55);
-        sensor.material.emissive.setHex(0x55ff55);
-        sensor.material.emissiveIntensity = 2.0;
-        return true;
-    } else if (hitSensor) {
-        // 부분 성공 (하나만 닿음): 닿은 빛의 색깔을 보여줌 (힌트)
-        // 예: 빨강만 닿으면 센서가 빨개짐
-        const lastColor = Array.from(hitColors).pop();
-        sensor.material.color.setHex(lastColor);
-        sensor.material.emissive.setHex(lastColor);
-        sensor.material.emissiveIntensity = 1.0;
-        return false; // 아직 클리어 아님
-    } else {
-        // 실패: 기본 초록 (꺼짐)
-        sensor.material.color.setHex(0x00ff00);
-        sensor.material.emissive.setHex(0x000000);
-        sensor.material.emissiveIntensity = 0.0;
-        return false;
-    }
+    // --- 3. 승리 판정 리턴 ---
+    // [수정] 모든 센서가 활성화되었는지 확인
+    hitAllSensors = sensors.length > 0 && sensors.every(s => s.userData.isHit);
+    return hitAllSensors;
 }

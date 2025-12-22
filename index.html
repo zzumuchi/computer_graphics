@@ -1,60 +1,78 @@
 <!DOCTYPE html>
 <html lang="ko">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Light Labyrinth</title>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
+    <link rel="stylesheet" href="style.css">
+
     <script type="importmap">
-      {
+    {
         "imports": {
-          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
         }
-      }
+    }
     </script>
-  </head>
-  <body>
+</head>
+<body>
+
     <div id="toolbox">
-      <h3>큐브 창고</h3>
-      <button id="btn-add-mirror" class="cube-btn">🪞 삼각 거울(90°)</button>
-      <button id="btn-add-trapezoid" class="cube-btn">📐 사다리꼴 거울 (45°/135°)</button>
-      <button id="btn-add-half" class="cube-btn">▮ 직육면체 거울 (슬림)</button>
-      
-      <button id="btn-add-dispersion" class="cube-btn">💎 분산 큐브 (분광)</button>
-      
-      <div class="description">
-          드래그하여 이동<br />클릭하여 선택<br />빈 공간 클릭 해제
-      </div>
+        <h3>큐브 창고</h3>
+        <button id="btn-add-mirror" class="cube-btn">🪞 삼각 거울(90°)</button>
+        <button id="btn-add-trapezoid" class="cube-btn">📐 사다리꼴 거울 (45°/135°)</button>
+        <button id="btn-add-half" class="cube-btn">▮ 직육면체 거울 (슬림)</button>
+        <button id="btn-add-dispersion" class="cube-btn">💎 분산 큐브</button>
+        <div class="description">
+            드래그하여 이동<br />클릭하여 선택<br />빈 공간 클릭 해제
+        </div>
     </div>
 
-    <div id="camera-status">MODE: 3D PERSPECTIVE</div>
+    <div id="status-panel">
+        <div class="status-row">
+            <span id="life-icon">❤️</span> 
+            <span id="life-text">Lives: 5</span>
+        </div>
+        <div class="status-row">
+            <span>📷</span>
+            <span id="camera-text">3D VIEW</span>
+        </div>
+        <div class="status-row" id="laser-status-row">
+            <span>⚡</span>
+            <span id="laser-text">Laser: OFF</span>
+        </div>
+    </div>
+
+    <div id="stage-transition">
+        <h1 id="st-stage-num">Stage 1</h1>
+        <h2 id="st-title">빛의 시작</h2>
+        <div class="separator"></div>
+        <p id="st-desc">빛을 반사시켜 센서에 도달하게 하세요.</p>
+    </div>
 
     <div id="ui-layer">
-      <div id="info">큐브를 드래그하여 이동, 클릭하여 선택</div>
+        <div id="info">준비 중...</div>
+    </div>
+
+    <div id="start-screen">
+        <div class="content">
+            <h1>LIGHT LABYRINTH</h1>
+            <p class="controls-hint">레이저를 연결해 벽을 깨고 탈출하세요.</p>
+            <button id="btn-start">게임 시작</button>
+        </div>
+    </div>
+
+    <div id="crosshair" style="display: none"></div>
+    
+    <div id="game-over-screen" style="display: none">
+        <div class="content">
+            <h1 style="color: #ff4444; font-size: 4rem; margin-bottom: 20px;">GAME OVER</h1>
+            <button onclick="location.reload()" style="padding:10px 20px; font-size:1.2rem; cursor:pointer; background:#fff; border:none; border-radius:5px;">다시 시작</button>
+        </div>
     </div>
 
     <script type="module" src="./src/main.js"></script>
-    <div id="start-screen">
-      <div class="content">
-        <h1>LIGHT LABYRINTH</h1>
-        <p>레이저를 연결해 벽을 깨고 탈출하세요.</p>
-        <p class="controls-hint">
-          [V]: 1인칭(WASD) ↔ 3인칭 전환<br />
-          [R]: 설치한 큐브 초기화<br />
-          [1,2,3,4]: 시점 변경 | 클릭: 시작
-        </p>
-        <button id="btn-start">게임 시작</button>
-      </div>
-    </div>
-    <div id="crosshair" style="display: none"></div>
-    <div id="game-over-screen" style="display: none">
-      <div class="content">
-        <h1 style="color: #ff4444; font-size: 4rem">GAME OVER</h1>
-        <p id="game-over-msg" style="font-size: 1.5rem; margin-bottom: 20px">
-          모든 기회를 소진했습니다.<br />새로고침을 눌러 다시 시작하세요.
-        </p>
-      </div>
-    </div>
-  </body>
+
+</body>
 </html>

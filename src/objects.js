@@ -1,13 +1,12 @@
 import * as THREE from 'three';
 
 // --- 1. 벽돌 룸 생성 ---
-
 export function createBrickRoom(size) {
     const group = new THREE.Group();
     const halfSize = size / 2;
-    // 벽 두께 및 벽돌 설정
-    const thickness = 0.6; 
+    const thickness = 1.0; 
 
+    // 벽 재질
     const wallMat = new THREE.MeshStandardMaterial({
         color: 0x444444,      
         roughness: 0.2,       
@@ -17,110 +16,73 @@ export function createBrickRoom(size) {
         side: THREE.DoubleSide 
     });
 
-    // 바닥
+    // 1-1. 바닥
     const floorGeo = new THREE.BoxGeometry(size, thickness, size);
     const floor = new THREE.Mesh(floorGeo, wallMat.clone());
     floor.position.set(0, -halfSize - (thickness / 2), 0);
     floor.userData = { isSurface: true, type: 'floor' };
     group.add(floor);
 
-    // 벽 생성 함수 (InstancedMesh 적용)
+    // [삭제됨] 그리드 생성 코드 제거
+
+    // 1-2. 벽 생성 함수
     function createDoubleWall(name, x, y, z, width, height, depth) {
         const wrapper = new THREE.Group();
         wrapper.name = name;
 
-        // A. 통짜 벽 (평소에 보이는 벽)
+        // A. 통짜 벽
         const solidGeo = new THREE.BoxGeometry(width, height, depth);
         const solidMesh = new THREE.Mesh(solidGeo, wallMat.clone());
         solidMesh.position.set(x, y, z);
         solidMesh.userData = { isSurface: true, type: 'solidWall' }; 
         wrapper.add(solidMesh);
 
-        // B. 조각 벽 (InstancedMesh 최적화)
-        // 벽돌 하나의 크기 설정
-        const targetLength = 1.2;
-        const targetHeight = 0.6;
-        const isXWall = (width < 2);
+        // B. 조각 벽
+        const brickGroup = new THREE.Group();
+        brickGroup.visible = false; 
+        brickGroup.userData = { type: 'brickGroup' }; 
 
-        const tW = isXWall ? width : (width / Math.ceil(width / targetLength));
-        const tH = targetHeight;
-        const tD = isXWall ? (depth / Math.ceil(depth / targetLength)) : depth;
-
-        const brickGeo = new THREE.BoxGeometry(tW, tH, tD);
+        const brickSize = 1.0; 
+        const brickGeo = new THREE.BoxGeometry(brickSize, brickSize, brickSize);
         
-        const cols = isXWall ? Math.ceil(depth / tD) : Math.ceil(width / tW);
-        const rows = Math.ceil(height / tH);
-        const count = cols * rows;
+        const isXWall = (width < 2); 
+        const cols = isXWall ? depth : width;  
+        const rows = height;                   
 
-        // [최적화] InstancedMesh 생성
-        const instancedMesh = new THREE.InstancedMesh(brickGeo, wallMat.clone(), count);
-        instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); // 매 프레임 업데이트 허용
-        instancedMesh.visible = false; 
-        instancedMesh.castShadow = false; // [성능] 작은 파편 그림자 제거
-        instancedMesh.receiveShadow = false;
+        const startH = isXWall ? (z - depth/2 + 0.5) : (x - width/2 + 0.5);
+        const startV = y - height/2 + 0.5;
 
-        // 위치 및 속도 데이터 저장소
-        const velocities = [];
-        const rotVels = [];
-        const initialMatrices = [];
-        const dummy = new THREE.Object3D(); // 계산용 임시 객체
-
-        const startH = isXWall ? (z - depth/2 + tD/2) : (x - width/2 + tW/2);
-        const startV = y - height/2 + tH/2;
-
-        let index = 0;
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
-                const hPos = startH + c * (isXWall ? tD : tW);
-                const vPos = startV + r * tH;
+                const mat = wallMat.clone();
+                const mesh = new THREE.Mesh(brickGeo, mat);
+                
+                const hPos = startH + c;
+                const vPos = startV + r;
 
-                if (isXWall) dummy.position.set(x, vPos, hPos);
-                else dummy.position.set(hPos, vPos, z);
+                if (isXWall) mesh.position.set(x, vPos, hPos);
+                else mesh.position.set(hPos, vPos, z);
 
-                dummy.rotation.set(0, 0, 0);
-                dummy.updateMatrix();
-
-                // 행렬 저장
-                instancedMesh.setMatrixAt(index, dummy.matrix);
-                initialMatrices.push(dummy.matrix.clone());
-
-                // 속도 데이터 (Array에 저장)
-                velocities.push(
-                    (Math.random() - 0.5) * 0.2, 
-                    Math.random() * -0.2,        
-                    (Math.random() - 0.5) * 0.2
-                );
-                rotVels.push(
-                    Math.random() * 0.1, 
-                    Math.random() * 0.1, 
-                    Math.random() * 0.1
-                );
-
-                index++;
+                mesh.userData = { 
+                    isBrick: true, 
+                    velocity: new THREE.Vector3((Math.random() - 0.5) * 0.3, Math.random() * -0.2, (Math.random() - 0.5) * 0.3),
+                    rotVel: new THREE.Vector3(Math.random() * 0.1, Math.random() * 0.1, Math.random() * 0.1)
+                };
+                brickGroup.add(mesh);
             }
         }
-
-        instancedMesh.userData = { 
-            type: 'brickGroup', 
-            isInstanced: true,
-            velocities: new Float32Array(velocities), // 메모리 최적화
-            rotVels: new Float32Array(rotVels),
-            initialMatrices: initialMatrices // 리셋용 원본 위치
-        };
-
-        wrapper.add(instancedMesh);
+        wrapper.add(brickGroup);
         return wrapper;
     }
 
-    group.add(createDoubleWall('Wall_Left', -halfSize - thickness/2, 0, 0, thickness, size, size));
-    group.add(createDoubleWall('Wall_Right', halfSize + thickness/2, 0, 0, thickness, size, size));
-    group.add(createDoubleWall('Wall_Back', 0, 0, -halfSize - thickness/2, size, size, thickness));
-    group.add(createDoubleWall('Wall_Front', 0, 0, halfSize + thickness/2, size, size, thickness));
+    group.add(createDoubleWall('Wall_Left', -halfSize - 0.5, 0, 0, thickness, size, size));
+    group.add(createDoubleWall('Wall_Right', halfSize + 0.5, 0, 0, thickness, size, size));
+    group.add(createDoubleWall('Wall_Back', 0, 0, -halfSize - 0.5, size, size, thickness));
+    group.add(createDoubleWall('Wall_Front', 0, 0, halfSize + 0.5, size, size, thickness));
 
     return group;
 }
 
-// ... (이하 createFixedCube, createMirrorCube, createPlayer 등 기존 코드 유지) ...
 export function createFixedCube(color, x, y, z, type) {
     const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(1, 1, 1), 
@@ -134,10 +96,156 @@ export function createFixedCube(color, x, y, z, type) {
     return mesh;
 }
 
+export function createFixedObstacle(x, y, z, w = 1, h = 1, d = 1, color = 0x444444) {
+    const geo = new THREE.BoxGeometry(w, h, d);
+    const mat = new THREE.MeshStandardMaterial({ 
+        color: color, 
+        roughness: 0.9, 
+        metalness: 0.1,
+        transparent: true,
+        opacity: 1.0
+    });
+    
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y, z);
+    
+    // 레이저 시스템이 이 물체를 장애물로 인식하게 설정
+    mesh.userData = { 
+        type: 'obstacle', 
+        draggable: false, // 고정 오브젝트
+        isSurface: false  // 레이저를 막는 벽 역할
+    };
+    
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    
+    // 에지 라인 추가 (크기에 맞게 자동 조정)
+    const edgesGeo = new THREE.EdgesGeometry(geo);
+    const edgesMat = new THREE.LineBasicMaterial({ color: 0x222222 });
+    const edges = new THREE.LineSegments(edgesGeo, edgesMat);
+    mesh.add(edges);
+
+    return mesh;
+}
+
+export function createLaserSource(x, y, z, dir) {
+    const group = new THREE.Group();
+    group.position.set(x, y, z);
+
+    // [중요] laser.js가 사용할 수 있도록 Vector3로 변환하여 저장
+    // dir이 [1, 0, 0] 형태라면 new THREE.Vector3(...dir)로 변환해야 합니다.
+    const directionVector = new THREE.Vector3(...dir).normalize();
+    group.userData = { 
+        type: 'source', 
+        isFixed: true, 
+        dir: directionVector // laser.js는 이 이름을 참조합니다.
+    };
+
+    // 1. 메인 본체 (어두운 회색)
+    const bodyGeo = new THREE.BoxGeometry(1, 1, 1);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    group.add(body);
+
+    // 2. 발사구(렌즈) - Z축 앞면에 작은 사각형 추가
+    const lensGeo = new THREE.BoxGeometry(0.6, 0.6, 0.1);
+    const lensMat = new THREE.MeshStandardMaterial({ 
+        color: 0xffffff, 
+        emissive: 0x000000, 
+        emissiveIntensity: 1.0 
+    });
+    const lens = new THREE.Mesh(lensGeo, lensMat);
+    // 본체 표면에 살짝 튀어나오게 배치 (0.5 + 두께절반)
+    const dirKey = dir.join(','); 
+    switch (dirKey) {
+        case "1,0,0":  lens.position.x = 0.5; lens.rotation.y = Math.PI/2; break;
+        case "-1,0,0": lens.position.x = -0.5; lens.rotation.y = -Math.PI/2; break;
+        case "0,1,0":  lens.position.y = 0.5; lens.rotation.x = -Math.PI/2; break;
+        case "0,-1,0": lens.position.y = -0.5; lens.rotation.x = Math.PI/2; break;
+        case "0,0,1":  lens.position.z = 0.5; break;
+        case "0,0,-1": lens.position.z = -0.5; lens.rotation.y = Math.PI; break;
+    }
+    group.add(lens);
+
+    return group;
+}
+
+export function createLaserSensor(x, y, z, dir, targetColor = 0xffffff) {
+    const group = new THREE.Group();
+    group.position.set(x, y, z);
+    group.userData = { type: 'sensor', isFixed: true, isHit: false, 
+        dir: new THREE.Vector3(...dir).normalize(), targetColor: targetColor};
+
+    // 1. 센서 본체
+    const bodyGeo = new THREE.BoxGeometry(1, 1, 1);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    group.add(body);
+
+    // 2. 수광 렌즈 (Z축 앞면)
+    const lensGeo = new THREE.BoxGeometry(0.7, 0.7, 0.05);
+    const lensMat = new THREE.MeshStandardMaterial({ 
+        color: 0x004400, // 대기 상태: 어두운 초록
+        emissive: 0x000000 
+    });
+    const lens = new THREE.Mesh(lensGeo, lensMat);
+    const dirKey = dir.join(','); 
+    switch (dirKey) {
+        case "1,0,0":  lens.position.x = 0.5; lens.rotation.y = Math.PI/2; break;
+        case "-1,0,0": lens.position.x = -0.5; lens.rotation.y = -Math.PI/2; break;
+        case "0,1,0":  lens.position.y = 0.5; lens.rotation.x = -Math.PI/2; break;
+        case "0,-1,0": lens.position.y = -0.5; lens.rotation.x = Math.PI/2; break;
+        case "0,0,1":  lens.position.z = 0.5; break;
+        case "0,0,-1": lens.position.z = -0.5; lens.rotation.y = Math.PI; break;
+    }
+    lens.name = "sensorLens";
+    group.add(lens);
+
+    return group;
+}
+
+export function createColorSensor(x, y, z, dir, targetColor) {
+    const group = new THREE.Group();
+    group.position.set(x, y, z);
+    group.userData = { type: 'sensor', isFixed: true, isHit: false,
+        dir: new THREE.Vector3(...dir).normalize(), targetColor: targetColor };
+
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), bodyMat);
+    group.add(body);
+
+    // 수광 렌즈 - 테두리에 타겟 색상을 표시하여 구분함
+    const lensMat = new THREE.MeshStandardMaterial({ 
+        color: 0x111111, // 대기 상태 (꺼짐)
+        emissive: 0x000000 
+    });
+    const lens = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.05), lensMat);
+    lens.name = "sensorLens";
+    
+    // 타겟 색상 가이드 (테두리)
+    const frameGeo = new THREE.BoxGeometry(0.8, 0.8, 0.02);
+    const frameMat = new THREE.MeshStandardMaterial({ color: targetColor, transparent: true, opacity: 0.5 });
+    const frame = new THREE.Mesh(frameGeo, frameMat);
+    
+    const dirKey = dir.join(','); 
+    switch (dirKey) {
+        case "1,0,0":  lens.position.x = 0.5; frame.position.x = 0.49; lens.rotation.y = Math.PI/2; break;
+        case "-1,0,0": lens.position.x = -0.5; frame.position.x = -0.49; lens.rotation.y = -Math.PI/2; break;
+        case "0,1,0":  lens.position.y = 0.5; frame.position.y = 0.49; lens.rotation.x = -Math.PI/2; break;
+        case "0,-1,0": lens.position.y = -0.5; frame.position.y = -0.49; lens.rotation.x = Math.PI/2; break;
+        case "0,0,1":  lens.position.z = 0.5; frame.position.z = 0.49; break;
+        case "0,0,-1": lens.position.z = -0.5; frame.position.z = -0.49; lens.rotation.y = Math.PI; break;
+    }
+
+    group.add(lens, frame);
+    return group;
+}
+
+// 삼각 거울, 90도 반사.
 export function createMirrorCube(x, y, z) {
     const group = new THREE.Group(); 
     group.position.set(x, y, z); 
-    group.userData = { type: 'mirror', draggable: true };
+    group.userData = { type: 'mirror', mirrorType: 'triangle', draggable: true };
     
     const geometry = new THREE.BufferGeometry();
     // 6개의 면을 구성하는 12개의 삼각형 (모든 면을 닫아 레이저 통과 방지)
@@ -194,7 +302,7 @@ export function createMirrorCube(x, y, z) {
 export function createTrapezoidMirrorCube(x, y, z) {
     const group = new THREE.Group();
     group.position.set(x, y, z);
-    group.userData = { type: 'mirror', draggable: true };
+    group.userData = { type: 'mirror', mirrorType: 'trapezoid', draggable: true };
 
     const geometry = new THREE.BufferGeometry();
     
@@ -280,7 +388,7 @@ export function createTrapezoidMirrorCube(x, y, z) {
 export function createHalfMirrorCube(x, y, z) {
     const group = new THREE.Group();
     group.position.set(x, y, z);
-    group.userData = { type: 'mirror', draggable: true };
+    group.userData = { type: 'mirror', mirrorType: 'half', draggable: true };
 
     const geometry = new THREE.BufferGeometry();
     
@@ -344,6 +452,71 @@ export function createHalfMirrorCube(x, y, z) {
     return group;
 }
 
+export function createFixedDoubleMirror(x, y, z, rotation = [0,0,0]) {
+    const group = new THREE.Group();
+    group.position.set(x, y, z);
+    group.rotation.set(rotation[0], rotation[1], rotation[2]);
+    group.userData = { type: 'doubleMirror', draggable: false };
+
+    const geometry = new THREE.BufferGeometry();
+    
+    const vertices = new Float32Array([
+        // 0-3: 정면 (Mirror)
+        -0.5,  0.5,  0.0,   0.5,  0.5,  0.0,  -0.5, -0.5,  0.0,   0.5, -0.5,  0.0,
+        // 4-7: 좌면
+        -0.5,  0.5,  0.1,  -0.5,  0.5, -0.1,  -0.5, -0.5,  0.1,  -0.5, -0.5, -0.1,
+        // 8-11: 우면
+         0.5,  0.5,  0.1,   0.5,  0.5, -0.1,   0.5, -0.5,  0.1,   0.5, -0.5, -0.1,
+        // 12-15: 상면
+        -0.5,  0.5,  0.1,   0.5,  0.5,  0.1,  -0.5,  0.5, -0.1,   0.5,  0.5, -0.1,
+        // 16-19: 하면
+        -0.5, -0.5,  0.1,   0.5, -0.5,  0.1,  -0.5, -0.5, -0.1,   0.5, -0.5, -0.1,
+    ]);
+
+    const indices = [
+        0, 2, 1,  2, 3, 1,       // 정면 (Indices 0-5)
+        4, 5, 6,  5, 7, 6,       // 좌면
+        8, 10, 9,  10, 11, 9,    // 우면
+        12, 13, 14,  13, 15, 14, // 상면
+        16, 17, 18,  17, 19, 18 // 하면
+    ];
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+
+    // [중요] 그룹 설정: 정면(인덱스 0-5)만 재질 1번(거울), 나머지는 0번(구조물)
+    geometry.clearGroups();
+    geometry.addGroup(0, 6, 1);    // 정면 -> 거울 재질
+    geometry.addGroup(6, 24, 0);   // 나머지 5개 면 -> 구조물 재질
+
+    const structMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 });
+    const mirrorMat = new THREE.MeshStandardMaterial({ 
+        color: 0xaaccff, 
+        roughness: 0.0, 
+        metalness: 1.0,
+        emissive: 0x222222,
+        emissiveIntensity: 0.2,
+        side: THREE.DoubleSide
+    });
+
+    const mesh = new THREE.Mesh(geometry, [structMat, mirrorMat]);
+    mesh.userData = { isPrism: true }; // laser.js 반사 로직 활성화
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+
+    // 선택 효과용 테두리
+    const edgesGeo = new THREE.EdgesGeometry(geometry);
+    const edgesMat = new THREE.LineBasicMaterial({ color: 0x777777 });
+    const edges = new THREE.LineSegments(edgesGeo, edgesMat);
+    edges.name = 'selectionOutline';
+    edges.userData = { ignoreLaser: true };
+    group.add(edges);
+
+    return group;
+}
+
 export function createPlayer() {
     const group = new THREE.Group(); 
     
@@ -359,57 +532,5 @@ export function createPlayer() {
     const visor = new THREE.Mesh(visorGeo, visorMat); 
     visor.position.set(0, 0.5, -0.3); 
     group.add(visor); 
-    return group;
-}
-
-// 분산 큐브 (Prism): 빛을 받으면 Red/Blue 45도 갈래로 나눔
-export function createDispersionCube(x, y, z) {
-    const group = new THREE.Group();
-    group.position.set(x, y, z);
-    group.userData = { type: 'dispersion', draggable: true };
-
-    // 1. 큐브 형태 (조금 작게 설정하여 내부 코어 느낌)
-    const geometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
-    
-    // 프리즘 느낌의 재질 (반투명 화이트)
-    const material = new THREE.MeshPhysicalMaterial({
-        color: 0xffffff,
-        transmission: 0.9,  // 유리처럼 투명하게
-        opacity: 1,
-        metalness: 0,
-        roughness: 0,
-        ior: 1.5,
-        thickness: 0.5,
-        emissive: 0xffffff,
-        emissiveIntensity: 0.2
-    });
-
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.userData = { isDispersion: true }; // Raycaster 식별용
-    group.add(mesh);
-
-    // 2. 외곽 프레임 (Dispersion임을 명확히 함)
-    const frameGeo = new THREE.BoxGeometry(1, 1, 1);
-    const edges = new THREE.EdgesGeometry(frameGeo);
-    const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff });
-    const frame = new THREE.LineSegments(edges, lineMat);
-    frame.userData = { ignoreLaser: true };
-    group.add(frame);
-
-    // 3. 선택용 투명 박스 (클릭 판정 범위 확보)
-    const hitBoxGeo = new THREE.BoxGeometry(1, 1, 1);
-    const hitBoxMat = new THREE.MeshBasicMaterial({ visible: false });
-    const hitBox = new THREE.Mesh(hitBoxGeo, hitBoxMat);
-    hitBox.userData = { isDispersion: true }; // 레이저 충돌체
-    group.add(hitBox);
-
-    // 선택 효과용 테두리
-    const selEdges = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xaaaaaa }));
-    selEdges.name = 'selectionOutline';
-    selEdges.userData = { ignoreLaser: true };
-    group.add(selEdges);
-
     return group;
 }
