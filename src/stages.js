@@ -53,7 +53,7 @@ export const STAGES = [
     
    { 
         id: 4, // (기존 Stage 1)
-        msg: "Stage 4: 빛의 시작",
+        msg: "Stage 4: 거울의 활용",
         desc: "반사 큐브를 조금 더 적극적으로 활용해 볼까요?",
         sourcePos: [-7, -3, 0], 
         sourceDir: [0, 0, -1],
@@ -83,7 +83,7 @@ export const STAGES = [
     },
     { 
         id: 6, 
-        msg: "Stage 6: 이동하는 벽",
+        msg: "Stage 6: 벽 안의 길",
         desc: "거대한 벽을 피해 이중 반사 거울을 활용하세요.",
         // 좌측 하단 출발 -> 우측으로 이동 -> 벽 피해 반사 -> 좌측 상단 도착
         sourcePos: [-7, FLOOR_Y + 0.5, 7], 
