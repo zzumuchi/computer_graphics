@@ -66,7 +66,7 @@ document.body.appendChild(renderer.domElement);
 
 // --- 후처리 ---
 const renderScene = new RenderPass(scene, activeCamera);
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 1.5, 0.4, 0.85);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.5, 0.4, 0.85);
 const outputPass = new OutputPass();
 const composer = new EffectComposer(renderer);
 composer.addPass(renderScene);
@@ -115,7 +115,7 @@ let hoveredAxis = null;
 let isDragging = false;      
 let mouseDownTime = 0;       
 
-// --- 가이드라인 (보조선) ---
+// --- 가이드라인 ---
 function createGuideLines() {
     const group = new THREE.Group();
     const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
@@ -132,22 +132,13 @@ function createGuideLines() {
 const guideLines = createGuideLines();
 scene.add(guideLines);
 
-// --- 회전 기즈모 ---
+// --- 기즈모 ---
 function createAxisGizmo() {
     const gizmo = new THREE.Group();
     gizmo.visible = false;
     const radius = 1.3; const tube = 0.08;
-    
-    // [수정] toneMapped: true로 변경하여 Bloom 효과(발광) 제거
-    const mat = new THREE.MeshBasicMaterial({ 
-        color: 0xffffff, 
-        toneMapped: true, // 발광 효과 제거의 핵심
-        transparent: true, 
-        opacity: 0.3 
-    });
-    
+    const mat = new THREE.MeshBasicMaterial({ color: 0xcccccc, toneMapped: true, transparent: true, opacity: 0.3 });
     const torusGeo = new THREE.TorusGeometry(radius, tube, 16, 64);
-    
     const ringX = new THREE.Mesh(torusGeo, mat.clone()); ringX.rotation.y = Math.PI/2; ringX.userData={isGizmo:true, axis:'x'}; gizmo.add(ringX);
     const ringY = new THREE.Mesh(torusGeo, mat.clone()); ringY.rotation.x = Math.PI/2; ringY.userData={isGizmo:true, axis:'y'}; gizmo.add(ringY);
     const ringZ = new THREE.Mesh(torusGeo, mat.clone()); ringZ.userData={isGizmo:true, axis:'z'}; gizmo.add(ringZ);
@@ -237,6 +228,10 @@ function loadStage(index) {
                 const obs = createFixedCube(el.color || 0x444444, el.pos[0], el.pos[1], el.pos[2], 'obstacle');
                 obs.scale.set(size[0], size[1], size[2]);
                 obs.userData.draggable = false;
+                if (currentStageIndex === 3) { // stage4 애니메이션
+                    obs.userData.originalPos = { x: el.pos[0], y: el.pos[1], z: el.pos[2] };
+                    obs.userData.isMovingObstacle = true;
+                }
                 scene.add(obs); mirrors.push(obs); 
             } else if (el.type === 'fixedMirror') {
                 const fm = createMirrorCube(...el.pos);
@@ -246,6 +241,11 @@ function loadStage(index) {
                 const dm = createFixedDoubleMirror(el.pos[0], el.pos[1], el.pos[2], el.rotation || [0,0,0]);
                 dm.userData.draggable = false;
                 scene.add(dm); mirrors.push(dm);
+            } else if (el.type === 'trianglemirror') {
+                const tm = createMirrorCube(el.pos[0], el.pos[1], el.pos[2]);
+                tm.userData.draggable = false;
+                if(el.rotation) tm.rotation.set(...el.rotation);
+                scene.add(tm); mirrors.push(tm);
             }
         });
     }
@@ -265,16 +265,11 @@ function loadStage(index) {
 function updateGizmoVisuals() {
     rotationGizmo.children.forEach(ring => {
         if (activeAxis && ring.userData.axis === activeAxis) {
-            ring.material.opacity = 1.0; 
-            ring.scale.setScalar(1.1);
-        } 
-        else if (hoveredAxis && ring.userData.axis === hoveredAxis) {
-            ring.material.opacity = 0.6; 
-            ring.scale.setScalar(1.05);
-        } 
-        else {
-            ring.material.opacity = 0.15; 
-            ring.scale.setScalar(1.0);
+            ring.material.opacity = 1.0; ring.scale.setScalar(1.1);
+        } else if (hoveredAxis && ring.userData.axis === hoveredAxis) {
+            ring.material.opacity = 0.6; ring.scale.setScalar(1.05);
+        } else {
+            ring.material.opacity = 0.15; ring.scale.setScalar(1.0);
         }
     });
 }
@@ -288,6 +283,17 @@ function highlightCube(cube, isSelected) {
         outline.material.toneMapped = !isSelected;
         outline.visible = true; 
     }
+    
+    // Fixed Objects Highlight
+    if (cube.userData && cube.userData.isFixed === true) {
+        const edges = cube.getObjectByName('fixedCubeEdges');
+        if (edges) {
+            edges.material.color.setHex(isSelected ? 0xffffff : 0xffffff);
+            edges.material.emissive = new THREE.Color(isSelected ? 0xffffff : 0x000000);
+            edges.material.emissiveIntensity = isSelected ? 1.0 : 0;
+        }
+    }
+
     guideLines.visible = isSelected; 
     if(isSelected) guideLines.position.copy(cube.position);
 }
@@ -323,7 +329,7 @@ function updateUI() {
         }
     };
 
-    updateBtn(btnAddMirror, 'triangle', '🪞 삼각 거울');
+    updateBtn(btnAddMirror, 'triangle', '📐 삼각 거울');
     updateBtn(btnAddTrapezoid, 'trapezoid', '📐 사다리꼴');
     updateBtn(btnAddHalf, 'half', '▮ 직육면체');
     updateBtn(btnAddDispersion, 'dispersion', '💎 분산 큐브');
@@ -381,6 +387,20 @@ function animateCrumble() {
     }
 }
 
+function animateStage4Wall() {
+    if (currentStageIndex !== 3) return; 
+    const time = clock.getElapsedTime();
+    const amplitude = 2.5; 
+    const speed = 0.6; 
+    scene.children.forEach(child => {
+        if (child.userData && child.userData.isMovingObstacle && child.userData.originalPos) {
+            const phase = (child.id % 3) * (Math.PI * 2 / 3); 
+            const offsetX = Math.sin(time * speed + phase) * amplitude;
+            child.position.x = child.userData.originalPos.x + offsetX;
+        }
+    });
+}
+
 function animate() {
     requestAnimationFrame(animate);
     const delta = clock.getDelta();
@@ -414,11 +434,10 @@ function animate() {
     } else roomGroup.traverse(c => { if(c.material) c.material.opacity = 1.0; });
 
     animateCrumble();
+    animateStage4Wall();
     if (orbitControls.enabled) orbitControls.update();
     composer.render();
 }
-
-// --- 이벤트 리스너 ---
 
 window.addEventListener('DOMContentLoaded', () => {
     const startBtn = document.getElementById('btn-start');
@@ -430,46 +449,59 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+// [핵심] 생성 및 드래그 함수
+// 버튼 클릭 시 호출되어 큐브를 생성하고 즉시 마우스에 붙임
+function spawnAndDrag(createFn, type) {
+    // 1. 개수 제한 체크
+    const limit = STAGES[currentStageIndex].maxMirrors[type] || 0;
+    const current = mirrors.filter(m => m.userData.draggable && m.userData.mirrorType === type).length;
+    
+    if (current >= limit) {
+        alert("더 이상 큐브를 추가할 수 없습니다.");
+        return;
+    }
+
+    // 2. 큐브 생성 (초기 위치는 0,0,0이지만 즉시 마우스로 이동됨)
+    const newCube = createFn(0, FLOOR_SURFACE_Y + 0.5, 0);
+    newCube.userData.mirrorType = type;
+    scene.add(newCube);
+    mirrors.push(newCube);
+
+    // 3. 즉시 드래그 상태로 전환 (Spawn & Drag)
+    if (selectedCube) highlightCube(selectedCube, false);
+    selectedCube = newCube;
+    highlightCube(selectedCube, true);
+    
+    // 기즈모 활성화
+    rotationGizmo.visible = true;
+    rotationGizmo.position.copy(selectedCube.position);
+    activeAxis = null;
+    
+    // [중요] 드래그 모드 강제 활성화
+    isDragging = true;
+    orbitControls.enabled = false;
+    window.dragTarget = newCube;
+    
+    updateGizmoVisuals();
+    updateUI();
+}
+
+// 버튼 리스너들을 spawnAndDrag 함수 사용으로 교체
 btnAddMirror.addEventListener('click', () => {
-    if (btnAddMirror.disabled) return;
-    const newCube = createMirrorCube(0, FLOOR_SURFACE_Y + 0.5, 0);
-    newCube.userData.mirrorType = 'triangle';
-    scene.add(newCube); mirrors.push(newCube);
-    if(selectedCube) highlightCube(selectedCube, false);
-    selectedCube = newCube; highlightCube(selectedCube, true);
-    rotationGizmo.visible = true; rotationGizmo.position.copy(selectedCube.position);
-    activeAxis = null; updateGizmoVisuals(); updateUI();
+    spawnAndDrag(createMirrorCube, 'triangle');
 });
+
 btnAddTrapezoid.addEventListener('click', () => {
-    if (btnAddTrapezoid.disabled) return;
-    const newCube = createTrapezoidMirrorCube(0, FLOOR_SURFACE_Y + 0.5, 0);
-    newCube.userData.mirrorType = 'trapezoid';
-    scene.add(newCube); mirrors.push(newCube);
-    if(selectedCube) highlightCube(selectedCube, false);
-    selectedCube = newCube; highlightCube(selectedCube, true);
-    rotationGizmo.visible = true; rotationGizmo.position.copy(selectedCube.position);
-    activeAxis = null; updateGizmoVisuals(); updateUI();
+    spawnAndDrag(createTrapezoidMirrorCube, 'trapezoid');
 });
+
 btnAddHalf.addEventListener('click', () => {
-    if (btnAddHalf.disabled) return;
-    const newCube = createHalfMirrorCube(0, FLOOR_SURFACE_Y + 0.5, 0);
-    newCube.userData.mirrorType = 'half';
-    scene.add(newCube); mirrors.push(newCube);
-    if(selectedCube) highlightCube(selectedCube, false);
-    selectedCube = newCube; highlightCube(selectedCube, true);
-    rotationGizmo.visible = true; rotationGizmo.position.copy(selectedCube.position);
-    activeAxis = null; updateGizmoVisuals(); updateUI();
+    spawnAndDrag(createHalfMirrorCube, 'half');
 });
+
 if (btnAddDispersion) {
     btnAddDispersion.addEventListener('click', () => {
-        if (btnAddDispersion.disabled) return;
-        const newCube = createDispersionCube(0, FLOOR_SURFACE_Y + 0.5, 0);
-        newCube.userData.mirrorType = 'dispersion';
-        scene.add(newCube); mirrors.push(newCube);
-        if(selectedCube) highlightCube(selectedCube, false);
-        selectedCube = newCube; highlightCube(selectedCube, true);
-        rotationGizmo.visible = true; rotationGizmo.position.copy(selectedCube.position);
-        activeAxis = null; updateGizmoVisuals(); updateUI();
+        spawnAndDrag(createDispersionCube, 'dispersion');
     });
 }
 
@@ -505,6 +537,11 @@ controls.addEventListener('unlock', () => { if (currentMode === CameraMode.FIRST
 
 window.addEventListener('pointerdown', (event) => {
     if (event.target.closest('#toolbox') || event.target.closest('#ui-layer') || event.target.closest('#status-panel')) return;
+    
+    // [중요] 이미 드래그 중인 물체(방금 생성한 큐브)가 있다면, 클릭 시 내려놓기(pointerup)가 처리되도록 
+    // 새로운 선택 로직을 실행하지 않고 리턴합니다.
+    if (window.dragTarget) return; 
+
     if (currentMode === CameraMode.FIRST_PERSON) mouse.set(0, 0);
     else { mouse.x = (event.clientX / width)*2-1; mouse.y = -(event.clientY / height)*2+1; }
     mouseDownTime = Date.now(); raycaster.setFromCamera(mouse, activeCamera);
@@ -524,8 +561,9 @@ window.addEventListener('pointerdown', (event) => {
     if (currentMode !== CameraMode.FIRST_PERSON) orbitControls.enabled = true;
 
     if (source) {
-        const hits = raycaster.intersectObject(source);
+        const hits = raycaster.intersectObject(source, true);
         if (hits.length > 0) {
+            // laser interaction (생략: 기존 코드 동일)
             if (failTimer) clearTimeout(failTimer);
             isLaserOn = !isLaserOn;
             if (isLaserOn) {
@@ -608,6 +646,7 @@ window.addEventListener('pointerup', (event) => {
         raycaster.setFromCamera(mouse, activeCamera);
         if(rotationGizmo.visible && raycaster.intersectObjects(rotationGizmo.children).length>0) return;
         
+        // 빈 공간 클릭 시 선택 해제
         if(raycaster.intersectObjects(mirrors,true).length===0 && selectedCube) {
             highlightCube(selectedCube,false); selectedCube=null; rotationGizmo.visible=false; activeAxis=null; updateGizmoVisuals(); updateUI();
         }
@@ -629,7 +668,6 @@ window.addEventListener('wheel', (event) => {
     }
 }, { passive: false });
 
-// [수정] MODE: 텍스트 제거 및 2D 뷰 회전 잠금
 function setCameraMode(mode) {
     if (currentMode === CameraMode.FIRST_PERSON) { controls.unlock(); playerGroup.position.set(0, FLOOR_SURFACE_Y + EYE_LEVEL, 0); playerMesh.visible = true; }
     currentMode = mode; orbitControls.enabled = true; orbitControls.reset();
@@ -648,7 +686,6 @@ function setCameraMode(mode) {
     }
     
     orbitControls.object = activeCamera;
-    
     if(activeCamera===orthoCamera) activeCamera.updateProjectionMatrix();
     renderScene.camera=activeCamera;
 }
