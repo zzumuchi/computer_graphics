@@ -14,7 +14,7 @@ export const STAGES = [
             { pos: [0, FLOOR_Y + 0.5, -7], dir: [0, 0, 1] } // 남쪽(아래, +z)을 바라봄
         ],
         // 배치할 큐브 없음
-        maxMirrors: { triangle: 0, trapezoid: 0, half: 0 },
+        maxMirrors: { triangle: 0, trapezoid: 0, half: 0, dispersion: 0 },
         fixedElements: []
     },
     { 
@@ -28,7 +28,7 @@ export const STAGES = [
             { pos: [-7, FLOOR_Y + 0.5, -7], dir: [0, 0, 1] } // 남쪽(아래)을 바라봄 (빛이 아래에서 올라오므로)
         ],
         // 삼각 거울 1개만 제공
-        maxMirrors: { triangle: 1, trapezoid: 0, half: 0 },
+        maxMirrors: { triangle: 1, trapezoid: 0, half: 0, dispersion: 0 },
         fixedElements: []
     },
     { 
@@ -40,7 +40,7 @@ export const STAGES = [
         sensorData: [
             { pos: [7, -7, 0], dir: [0, 0, -1] }, // [주의] 기존 코드의 센서 방향 유지
         ],
-        maxMirrors: { triangle: 3, trapezoid: 0, half: 0 }
+        maxMirrors: { triangle: 3, trapezoid: 0, half: 0, dispersion: 0 },
     },
     { 
         id: 4, // (기존 Stage 2)
@@ -50,7 +50,7 @@ export const STAGES = [
         sensorData: [
             { pos: [-7, -7, -7], dir: [1, 0, 0] },
         ],
-        maxMirrors: { triangle: 0, trapezoid: 4, half: 0 },
+        maxMirrors: { triangle: 0, trapezoid: 4, half: 0, dispersion: 0 },
         fixedElements: [
             // 레이저를 막는 거대한 고정 장애물
             { type: 'obstacle', pos: [-3, 0, 0], size: [9, 15 ,1], color: 0x222222 },
