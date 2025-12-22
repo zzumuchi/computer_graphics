@@ -5,8 +5,8 @@ const FLOOR_Y = -7.5; // 바닥 높이 (15칸 맵 기준 -7.5)
 export const STAGES = [
     { 
         id: 1, 
-        msg: "Stage 1: 빛의 직진 (Tutorial)",
-        desc: "아무것도 설치하지 않고 시작 버튼을 눌러보세요.",
+        msg: "Stage 1: 빛의 직진",
+        desc: "빛을 이용해 탈출하세요.",
         mapSize: 15,
         // 중앙 하단에서 출발
         sourcePos: [0, FLOOR_Y + 0.5, 7], 
@@ -20,8 +20,8 @@ export const STAGES = [
     },
     { 
         id: 2, 
-        msg: "Stage 2: 90도 반사 (Tutorial)",
-        desc: "삼각 거울을 설치하여 빛을 90도로 꺾으세요.",
+        msg: "Stage 2: 빛의 반사",
+        desc: "삼각 거울을 활용해 빛의 길을 조정해보세요.",
         // 우측 하단 출발 -> 좌측 하단 거울 -> 좌측 상단 센서
         sourcePos: [7, FLOOR_Y + 0.5, 7], 
         sourceDir: [-1, 0, 0], // 서쪽(-x) 발사
@@ -35,8 +35,8 @@ export const STAGES = [
     
     { 
         id: 3, 
-        msg: "Stage 3: 빛의 분산 (Prism)",
-        desc: "분산 큐브로 빛을 나누고, 거울로 센서를 조준하세요.",
+        msg: "Stage 3: 빛의 분산",
+        desc: "빛을 나누었다가 다시 모아보세요.",
         // 중앙 하단에서 출발
         sourcePos: [0, FLOOR_Y + 0.5, 7], 
         sourceDir: [0, 0, -1], 
@@ -54,7 +54,7 @@ export const STAGES = [
    { 
         id: 4, // (기존 Stage 1)
         msg: "Stage 4: 거울의 활용",
-        desc: "반사 큐브를 조금 더 적극적으로 활용해 볼까요?",
+        desc: "거울을 조금 더 적극적으로 활용해 볼까요?",
         sourcePos: [-7, -3, 0], 
         sourceDir: [0, 0, -1],
         sensorData: [
@@ -64,8 +64,8 @@ export const STAGES = [
     },
     { 
         id: 5, // (기존 Stage 2)
-        msg: "Stage 5: 장애물과 이중 반사",
-        desc: "사다리꼴 반사 큐브를 이용해보세요.",
+        msg: "Stage 5: 벽을 피해 티키타카",
+        desc: "거울을 활용해 벽을 돌아 목적지에 도달하세요.",
         sourcePos: [-7, -7, 7], 
         sourceDir: [1, 0, 0],
         sensorData: [
@@ -83,8 +83,8 @@ export const STAGES = [
     },
     { 
         id: 6, 
-        msg: "Stage 6: 벽 안의 길",
-        desc: "거대한 벽을 피해 이중 반사 거울을 활용하세요.",
+        msg: "Stage 6: 밖에서 안으로",
+        desc: "바깥의 빛을 안으로 가져와 볼까요?",
         // 좌측 하단 출발 -> 우측으로 이동 -> 벽 피해 반사 -> 좌측 상단 도착
         sourcePos: [-7, FLOOR_Y + 0.5, 7], 
         sourceDir: [1, 0, 0], // 동쪽(+x) 발사
