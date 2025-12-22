@@ -32,7 +32,7 @@ export const STAGES = [
         maxMirrors: { triangle: 1, trapezoid: 0, half: 0, dispersion: 0 },
         fixedElements: []
     },
-    /*
+    
     { 
         id: 3, 
         msg: "Stage 3: 빛의 분산 (Prism)",
@@ -50,10 +50,10 @@ export const STAGES = [
             { type: 'obstacle', pos: [0, -5, 0], size: [2, 5, 8], color: 0x333333 }
         ]
     },
-    */
+    
    { 
-        id: 3, // (기존 Stage 1)
-        msg: "Stage 3: 빛의 시작",
+        id: 4, // (기존 Stage 1)
+        msg: "Stage 4: 빛의 시작",
         desc: "반사 큐브를 조금 더 적극적으로 활용해 볼까요?",
         sourcePos: [-7, -3, 0], 
         sourceDir: [0, 0, -1],
@@ -63,8 +63,8 @@ export const STAGES = [
         maxMirrors: { triangle: 3, trapezoid: 0, half: 0, dispersion: 0 },
     },
     { 
-        id: 4, // (기존 Stage 2)
-        msg: "Stage 4: 장애물과 이중 반사",
+        id: 5, // (기존 Stage 2)
+        msg: "Stage 5: 장애물과 이중 반사",
         desc: "사다리꼴 반사 큐브를 이용해보세요.",
         sourcePos: [-7, -7, 7], 
         sourceDir: [1, 0, 0],
@@ -82,8 +82,8 @@ export const STAGES = [
         ]
     },
     { 
-        id: 5, 
-        msg: "Stage 5: 이동하는 벽",
+        id: 6, 
+        msg: "Stage 6: 이동하는 벽",
         desc: "거대한 벽을 피해 이중 반사 거울을 활용하세요.",
         // 좌측 하단 출발 -> 우측으로 이동 -> 벽 피해 반사 -> 좌측 상단 도착
         sourcePos: [-7, FLOOR_Y + 0.5, 7], 
@@ -95,18 +95,19 @@ export const STAGES = [
         maxMirrors: { triangle: 0, trapezoid: 4, half: 0, dispersion: 0 },
         fixedElements: [
             // 레이저를 막는 고정 장애물 (검은색 큐브)
-            { type: 'obstacle', pos: [2, -5, -1], size: [1, 5 ,13], color: 0x222222 },
+            { type: 'obstacle', pos: [2, -5, -4], size: [1, 5 ,7], color: 0x222222 },
             { type: 'obstacle', pos: [-3, -5, -1], size: [9, 5 ,1], color: 0x222222 },
             { type: 'trianglemirror', pos: [7,-7, -7], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
-                draggable: false },            { type: 'trianglemirror', pos: [7,-7, -6], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
+                draggable: false },  { type: 'fixedmirror', pos: [7,-7, 7], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
+                draggable: false },          
+                { type: 'trianglemirror', pos: [7,-7, -6], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
                 draggable: false },            { type: 'trianglemirror', pos: [7,-7, -5], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
                 draggable: false },            { type: 'trianglemirror', pos: [7,-7, -4], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
                 draggable: false },            { type: 'trianglemirror', pos: [7,-7, -3], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
                 draggable: false },            { type: 'trianglemirror', pos: [7,-7, -2], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
                 draggable: false },            { type: 'trianglemirror', pos: [7,-7, -1], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
                 draggable: false },            { type: 'trianglemirror', pos: [7,-7, 0], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
-                draggable: false },{ type: 'trianglemirror', pos: [7,-7, -7], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
-                draggable: false },            { type: 'trianglemirror', pos: [7,-7, 6], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
+                draggable: false },             { type: 'trianglemirror', pos: [7,-7, 6], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
                 draggable: false },            { type: 'trianglemirror', pos: [7,-7, 5], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
                 draggable: false },            { type: 'trianglemirror', pos: [7,-7, 4], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전
                 draggable: false },            { type: 'trianglemirror', pos: [7,-7, 3], rotation: [0, -Math.PI/2, 0], // Y축 기준 45도 회전

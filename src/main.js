@@ -228,10 +228,7 @@ function loadStage(index) {
                 const obs = createFixedCube(el.color || 0x444444, el.pos[0], el.pos[1], el.pos[2], 'obstacle');
                 obs.scale.set(size[0], size[1], size[2]);
                 obs.userData.draggable = false;
-                if (currentStageIndex === 3) { // stage4 애니메이션
-                    obs.userData.originalPos = { x: el.pos[0], y: el.pos[1], z: el.pos[2] };
-                    obs.userData.isMovingObstacle = true;
-                }
+                // [삭제됨] 움직이는 벽 속성 부여 코드 제거
                 scene.add(obs); mirrors.push(obs); 
             } else if (el.type === 'fixedMirror') {
                 const fm = createMirrorCube(...el.pos);
@@ -283,17 +280,6 @@ function highlightCube(cube, isSelected) {
         outline.material.toneMapped = !isSelected;
         outline.visible = true; 
     }
-    
-    // Fixed Objects Highlight
-    if (cube.userData && cube.userData.isFixed === true) {
-        const edges = cube.getObjectByName('fixedCubeEdges');
-        if (edges) {
-            edges.material.color.setHex(isSelected ? 0xffffff : 0xffffff);
-            edges.material.emissive = new THREE.Color(isSelected ? 0xffffff : 0x000000);
-            edges.material.emissiveIntensity = isSelected ? 1.0 : 0;
-        }
-    }
-
     guideLines.visible = isSelected; 
     if(isSelected) guideLines.position.copy(cube.position);
 }
@@ -387,19 +373,7 @@ function animateCrumble() {
     }
 }
 
-function animateStage4Wall() {
-    if (currentStageIndex !== 3) return; 
-    const time = clock.getElapsedTime();
-    const amplitude = 2.5; 
-    const speed = 0.6; 
-    scene.children.forEach(child => {
-        if (child.userData && child.userData.isMovingObstacle && child.userData.originalPos) {
-            const phase = (child.id % 3) * (Math.PI * 2 / 3); 
-            const offsetX = Math.sin(time * speed + phase) * amplitude;
-            child.position.x = child.userData.originalPos.x + offsetX;
-        }
-    });
-}
+// [삭제됨] animateStage4Wall 함수 삭제됨
 
 function animate() {
     requestAnimationFrame(animate);
@@ -434,7 +408,7 @@ function animate() {
     } else roomGroup.traverse(c => { if(c.material) c.material.opacity = 1.0; });
 
     animateCrumble();
-    animateStage4Wall();
+    // [삭제됨] animateStage4Wall() 호출 삭제됨
     if (orbitControls.enabled) orbitControls.update();
     composer.render();
 }
@@ -450,9 +424,7 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 // [핵심] 생성 및 드래그 함수
-// 버튼 클릭 시 호출되어 큐브를 생성하고 즉시 마우스에 붙임
 function spawnAndDrag(createFn, type) {
-    // 1. 개수 제한 체크
     const limit = STAGES[currentStageIndex].maxMirrors[type] || 0;
     const current = mirrors.filter(m => m.userData.draggable && m.userData.mirrorType === type).length;
     
@@ -461,23 +433,19 @@ function spawnAndDrag(createFn, type) {
         return;
     }
 
-    // 2. 큐브 생성 (초기 위치는 0,0,0이지만 즉시 마우스로 이동됨)
     const newCube = createFn(0, FLOOR_SURFACE_Y + 0.5, 0);
     newCube.userData.mirrorType = type;
     scene.add(newCube);
     mirrors.push(newCube);
 
-    // 3. 즉시 드래그 상태로 전환 (Spawn & Drag)
     if (selectedCube) highlightCube(selectedCube, false);
     selectedCube = newCube;
     highlightCube(selectedCube, true);
     
-    // 기즈모 활성화
     rotationGizmo.visible = true;
     rotationGizmo.position.copy(selectedCube.position);
     activeAxis = null;
     
-    // [중요] 드래그 모드 강제 활성화
     isDragging = true;
     orbitControls.enabled = false;
     window.dragTarget = newCube;
@@ -486,7 +454,6 @@ function spawnAndDrag(createFn, type) {
     updateUI();
 }
 
-// 버튼 리스너들을 spawnAndDrag 함수 사용으로 교체
 btnAddMirror.addEventListener('click', () => {
     spawnAndDrag(createMirrorCube, 'triangle');
 });
@@ -538,8 +505,6 @@ controls.addEventListener('unlock', () => { if (currentMode === CameraMode.FIRST
 window.addEventListener('pointerdown', (event) => {
     if (event.target.closest('#toolbox') || event.target.closest('#ui-layer') || event.target.closest('#status-panel')) return;
     
-    // [중요] 이미 드래그 중인 물체(방금 생성한 큐브)가 있다면, 클릭 시 내려놓기(pointerup)가 처리되도록 
-    // 새로운 선택 로직을 실행하지 않고 리턴합니다.
     if (window.dragTarget) return; 
 
     if (currentMode === CameraMode.FIRST_PERSON) mouse.set(0, 0);
@@ -563,7 +528,6 @@ window.addEventListener('pointerdown', (event) => {
     if (source) {
         const hits = raycaster.intersectObject(source, true);
         if (hits.length > 0) {
-            // laser interaction (생략: 기존 코드 동일)
             if (failTimer) clearTimeout(failTimer);
             isLaserOn = !isLaserOn;
             if (isLaserOn) {
@@ -646,7 +610,6 @@ window.addEventListener('pointerup', (event) => {
         raycaster.setFromCamera(mouse, activeCamera);
         if(rotationGizmo.visible && raycaster.intersectObjects(rotationGizmo.children).length>0) return;
         
-        // 빈 공간 클릭 시 선택 해제
         if(raycaster.intersectObjects(mirrors,true).length===0 && selectedCube) {
             highlightCube(selectedCube,false); selectedCube=null; rotationGizmo.visible=false; activeAxis=null; updateGizmoVisuals(); updateUI();
         }

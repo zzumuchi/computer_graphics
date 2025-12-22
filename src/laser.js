@@ -55,6 +55,7 @@ export function updateLaserSystem(sceneParams, laserGroupObject, isActive) {
         
         const intersects = raycaster.intersectObjects(allInteractables, true);
         
+        // ignoreLaser 태그가 없는 가장 가까운 물체 찾기
         const hit = intersects.find(intersect => 
             !intersect.object.userData.ignoreLaser && 
             intersect.object !== currentRay.ignoreObject
@@ -83,7 +84,7 @@ export function updateLaserSystem(sceneParams, laserGroupObject, isActive) {
                     color: currentRay.color
                 });
             }
-            // 2. 분산 큐브 (Dispersion) - [회전 반영]
+            // 2. 분산 큐브 (Dispersion) - [핵심 로직]
             else if (obj.userData.isDispersion) {
                 let rootGroup = obj;
                 while(rootGroup.parent && rootGroup.parent.type !== 'Scene') {
@@ -91,48 +92,43 @@ export function updateLaserSystem(sceneParams, laserGroupObject, isActive) {
                     rootGroup = rootGroup.parent;
                 }
 
-                // 큐브 중심
+                // 큐브의 정중앙 좌표 (월드 좌표)
                 const cubeCenter = new THREE.Vector3();
                 obj.getWorldPosition(cubeCenter);
 
-                // A. 표면까지 (흰색)
+                // A. 표면까지의 광선 (Start -> Surface)
                 segmentsToDraw.push({
                     start: currentRay.origin,
                     end: hit.point,
                     color: currentRay.color 
                 });
                 
-                // B. 투과 (표면 -> 중심, 흰색)
+                // B. [투과 효과] 표면에서 정중앙까지 흰색 광선 연장 (Surface -> Center)
                 segmentsToDraw.push({
                     start: hit.point,
                     end: cubeCenter,
                     color: currentRay.color 
                 });
 
-                // C. 분산 (큐브 회전에 따라 90도 간격)
+                // C. 분산 (중앙에서 시작)
                 if (currentRay.color.getHex() === 0xffffff) {
-                    // 로컬 벡터 정의 (형태에 맞춤)
-                    // 왼쪽(-1, 1, 0)과 오른쪽(1, 1, 0) 방향
-                    const localRed = new THREE.Vector3(-1, 1, 0).normalize();
-                    const localBlue = new THREE.Vector3(1, 1, 0).normalize();
-
-                    // 월드 벡터로 변환 (큐브 회전 적용)
-                    localRed.transformDirection(obj.matrixWorld);
-                    localBlue.transformDirection(obj.matrixWorld);
-
-                    // Red Beam
+                    const axis = new THREE.Vector3(0, 1, 0); 
+                    
+                    // 빨강 (45도)
+                    const dirRed = currentRay.dir.clone().applyAxisAngle(axis, Math.PI / 4).normalize();
                     rayQueue.push({
-                        origin: cubeCenter.clone(),
-                        dir: localRed,
+                        origin: cubeCenter.clone(), // 중앙에서 출발
+                        dir: dirRed,
                         color: new THREE.Color(1, 0, 0),
                         depth: currentRay.depth + 1,
-                        ignoreObject: rootGroup
+                        ignoreObject: rootGroup // 자기 자신 무시
                     });
 
-                    // Blue Beam
+                    // 파랑 (-45도)
+                    const dirBlue = currentRay.dir.clone().applyAxisAngle(axis, -Math.PI / 4).normalize();
                     rayQueue.push({
-                        origin: cubeCenter.clone(),
-                        dir: localBlue,
+                        origin: cubeCenter.clone(), // 중앙에서 출발
+                        dir: dirBlue,
                         color: new THREE.Color(0, 0, 1),
                         depth: currentRay.depth + 1,
                         ignoreObject: rootGroup
@@ -161,7 +157,7 @@ export function updateLaserSystem(sceneParams, laserGroupObject, isActive) {
                     ignoreObject: obj 
                 });
             }
-            // 4. 장애물
+            // 4. 일반 장애물
             else {
                 segmentsToDraw.push({
                     start: currentRay.origin,
@@ -205,7 +201,7 @@ export function updateLaserSystem(sceneParams, laserGroupObject, isActive) {
         segment.lookAt(segData.end);
         segment.scale.z = segData.start.distanceTo(segData.end);
         
-        // 발광 효과
+        // 발광 효과 (색상 증폭)
         const intenseColor = segData.color.clone().multiplyScalar(10.0); 
         segment.material.color.copy(intenseColor);
     }

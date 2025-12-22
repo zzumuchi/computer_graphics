@@ -75,23 +75,58 @@ export function createBrickRoom(size) {
     return group;
 }
 
-// --- 2. 장애물 ---
 export function createFixedObstacle(x, y, z, w = 1, h = 1, d = 1, color = 0x444444) {
     const geo = new THREE.BoxGeometry(w, h, d);
+    
+    // 텍스처 로더 초기화 (한 번만 생성)
+    if (!createFixedObstacle.textureLoader) {
+        createFixedObstacle.textureLoader = new THREE.TextureLoader();
+        
+        // 텍스처 로드 및 설정 (한 번만 로드)
+        createFixedObstacle.stoneTexture = createFixedObstacle.textureLoader.load("./src/assets/textures/stone.jpg");
+        createFixedObstacle.stoneTexture.minFilter = THREE.LinearFilter;
+        createFixedObstacle.stoneTexture.magFilter = THREE.LinearFilter;
+        createFixedObstacle.stoneTexture.anisotropy = 4;
+        
+        createFixedObstacle.bumpTexture = createFixedObstacle.textureLoader.load("./src/assets/textures/stone-bump.jpg");
+        createFixedObstacle.bumpTexture.minFilter = THREE.LinearFilter;
+        createFixedObstacle.bumpTexture.magFilter = THREE.LinearFilter;
+    }
+    
+    // 텍스처를 사용하되, color로 색감 조정
     const mat = new THREE.MeshStandardMaterial({ 
-        map: stoneTexture, bumpMap: stoneBumpTexture, bumpScale: 2.0,
-        color: color, metalness: 0.2, roughness: 0.85
+        map: createFixedObstacle.stoneTexture,
+        bumpMap: createFixedObstacle.bumpTexture,
+        bumpScale: 2.0,
+        color: color, // 색상으로 텍스처 톤 조정
+        metalness: 0.2,
+        roughness: 0.85,
+        transparent: true,
+        opacity: 1.0
     });
+    
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, y, z);
-    mesh.userData = { type: 'obstacle', draggable: false, isSurface: false };
-    mesh.castShadow = true; mesh.receiveShadow = true;
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x222222 }));
-    edges.name = 'obstacleEdges';
+    
+    // 레이저 시스템이 이 물체를 장애물로 인식하게 설정
+    mesh.userData = { 
+        type: 'obstacle', 
+        draggable: false, // 고정 오브젝트
+        isSurface: false  // 레이저를 막는 벽 역할
+    };
+    
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    
+    // 에지 라인 추가 (크기에 맞게 자동 조정)
+    const edgesGeo = new THREE.EdgesGeometry(geo);
+    const edgesMat = new THREE.LineBasicMaterial({ color: 0x222222 });
+    const edges = new THREE.LineSegments(edgesGeo, edgesMat);
+    edges.name = 'obstacleEdges'; // obstacle edges 식별용 이름
     mesh.add(edges);
+
     return mesh;
 }
-
 // --- 3. Source ---
 export function createLaserSource(x, y, z, dir) {
     const group = new THREE.Group();
@@ -354,7 +389,7 @@ export function createFixedCube(color, x, y, z, type) {
     mesh.position.set(x, y, z); 
     const edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 }));
     edges.name = 'fixedCubeEdges';
-    mesh.add(edges);
+    // mesh.add(edges);
     mesh.castShadow = true; mesh.receiveShadow = true;
     mesh.userData = { type: type, isFixed: true }; 
     return mesh;
