@@ -201,10 +201,74 @@ body {
     text-align: center;
 }
 
-#start-screen h1 {
+/* 시작 화면 전체 컨테이너 */
+#start-screen {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+    color: white;
+    font-family: 'Noto Sans KR', sans-serif;
+}
+
+.title-box {
+    margin-bottom: 40px;
+    text-align: center;
+}
+
+.title-box h1 {
     font-size: 3rem;
-    color: #00ff00;
     margin-bottom: 10px;
+    text-shadow: 0 0 10px #ffffff;
+}
+
+/* 스테이지 선택 그리드 */
+#stage-select-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr); /* 한 줄에 3개씩 */
+    gap: 15px;
+    max-width: 800px;
+    width: 90%;
+    max-height: 60vh;
+    overflow-y: auto; /* 스테이지 많으면 스크롤 */
+    padding: 10px;
+}
+
+/* 개별 스테이지 버튼 */
+.stage-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid #444;
+    color: #ddd;
+    padding: 15px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border-radius: 8px;
+    text-align: left;
+}
+
+.stage-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: #fff;
+    color: #fff;
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+    transform: translateY(-2px);
+}
+
+.stage-btn .stage-id {
+    font-size: 0.8em;
+    color: #888;
+    margin-bottom: 5px;
+    display: block;
+}
+
+.stage-btn .stage-title {
+    font-weight: bold;
+    font-size: 1.1em;
 }
 
 .controls-hint {
@@ -257,3 +321,4 @@ body {
     pointer-events: none;
     z-index: 1500;
 }
+

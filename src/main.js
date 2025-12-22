@@ -414,11 +414,34 @@ function animate() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-    const startBtn = document.getElementById('btn-start');
-    if (startBtn) {
-        startBtn.addEventListener('click', () => {
-            document.getElementById('start-screen').style.display = 'none';
-            loadStage(0);
+    const grid = document.getElementById('stage-select-grid');
+    const screen = document.getElementById('start-screen');
+
+    if (grid && STAGES) {
+        // STAGES 배열을 순회하며 버튼 생성
+        STAGES.forEach((stage, index) => {
+            const btn = document.createElement('button');
+            btn.className = 'stage-btn';
+            
+            // 버튼 내용 (Stage 번호 + 제목)
+            // msg가 "Stage 1: 제목" 형식이면 분리해서 표시, 아니면 그대로 표시
+            let titleText = stage.msg;
+            if (stage.msg.includes(':')) {
+                titleText = stage.msg.split(':')[1].trim();
+            }
+
+            btn.innerHTML = `
+                <span class="stage-id">STAGE ${stage.id}</span>
+                <span class="stage-title">${titleText}</span>
+            `;
+
+            // 클릭 이벤트
+            btn.addEventListener('click', () => {
+                screen.style.display = 'none'; // 시작 화면 숨김
+                loadStage(index);              // 해당 인덱스 스테이지 로드
+            });
+
+            grid.appendChild(btn);
         });
     }
 });
